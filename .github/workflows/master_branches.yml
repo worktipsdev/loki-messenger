@@ -1,10 +1,19 @@
-name: Loki Messenger Clearnet Build
+name: Loki Messenger Branch Build
 
-on: [push]
+on:
+  push:
+    # Sequence of patterns matched against refs/heads
+    branches:
+      - master
+      - clearnet
+      - github_actions
 
 jobs:
-  build_linux:
-    runs-on: ubuntu-latest
+  build_unix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
     env:
       SIGNAL_ENV: production
     steps:
@@ -43,5 +52,5 @@ jobs:
       - name: upload production artifacts
         uses: actions/upload-artifact@v1
         with:
-          name: linux-${{ github.ref }}
-          path: release/*.deb
+          name: ${{ runner.OS }}-${{ github.ref }}
+          path: release

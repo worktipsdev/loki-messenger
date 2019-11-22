@@ -3,8 +3,11 @@ name: Loki Messenger Pull Request
 on: [pull_request]
 
 jobs:
-  build_linux:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
     env:
       SIGNAL_ENV: production
     steps:
