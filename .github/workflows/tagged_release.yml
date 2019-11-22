@@ -45,7 +45,7 @@ jobs:
       - name: Lint Files
         run: yarn lint
       - name: Build Production Binaries
-        run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion='${{ GITHUB_REF }}' --publish=never --config.directories.output=release
+        run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion='${{ github.ref }}' --publish=never --config.directories.output=release
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1.0.0
