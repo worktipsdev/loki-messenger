@@ -29,7 +29,12 @@ jobs:
       - name: Generate and concat files
         run: yarn generate
       - name: Run Tests
-        run: yarn test
+        env:
+          DISPLAY: 9.0
+          LC_ALL: en_US
+        run: |
+          Xvfb -ac -screen scrn 1280x2000x24 :9.0 &
+          yarn test
       - name: Lint Files
         run: yarn lint
       - name: Build Production Binaries
