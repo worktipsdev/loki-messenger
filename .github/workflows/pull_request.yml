@@ -1,0 +1,40 @@
+name: Loki Messenger Pull Request
+
+on: [pull_request]
+
+jobs:
+  build_linux:
+    runs-on: ubuntu-latest
+    env:
+      SIGNAL_ENV: production
+    steps:
+      - name: Checkout git repo
+        uses: actions/checkout@v1
+      # Cache is too big (>400Mb) for github
+      # - name: Cache node modules
+      #   uses: actions/cache@v1
+      #   with:
+      #     path: node_modules
+      #     key: ${{ runner.OS }}-npm-${{ hashFiles('yarn.lock') }}
+      # - name: Install apt packages
+      #   run: sudo apt-get install -y libgtk2.0-0 libgtk-3-0 libgconf-2-4 libasound2 libxtst6 libxss1 libnss3 xvfb hunspell-en-us
+      # TODO: get this to detect .nvmrc
+      - name: Set up node using nvm
+        uses: dcodeIO/setup-node-nvm@v2.0.0
+        with:
+          node-version: 10.13
+      - name: Install yarn
+        run: npm install yarn --no-save
+      - name: Install Dependencies
+        run: yarn install --frozen-lockfile
+      - name: Generate and concat files
+        run: yarn generate
+      # - name: Run Tests
+      #   env:
+      #     DISPLAY: 9.0
+      #     LC_ALL: en_US
+      #   run: |
+      #     Xvfb -ac -screen scrn 1280x2000x24 :9.0 &
+      #     yarn test
+      - name: Lint Files
+        run: yarn lint

@@ -1,6 +1,6 @@
-name: Loki Messenger Automated Build
+name: Loki Messenger Clearnet Build
 
-on: [pull_request]
+on: [push]
 
 jobs:
   build_linux:
@@ -10,14 +10,15 @@ jobs:
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v1
-      - name: Cache node modules
-        uses: actions/cache@v1
-        with:
-          path: node_modules
-          key: ${{ runner.OS }}-npm-${{ hashFiles('yarn.lock') }}
-        # TODO: get this to detect .nvmrc
-      - name: Install apt packages
-        run: sudo apt-get install -y libgtk2.0-0 libgtk-3-0 libgconf-2-4 libasound2 libxtst6 libxss1 libnss3 xvfb hunspell-en-us
+      # Cache is too big (>400Mb) for github
+      # - name: Cache node modules
+      #   uses: actions/cache@v1
+      #   with:
+      #     path: node_modules
+      #     key: ${{ runner.OS }}-npm-${{ hashFiles('yarn.lock') }}
+      # - name: Install apt packages
+      #   run: sudo apt-get install -y libgtk2.0-0 libgtk-3-0 libgconf-2-4 libasound2 libxtst6 libxss1 libnss3 xvfb hunspell-en-us
+      # TODO: get this to detect .nvmrc
       - name: Set up node using nvm
         uses: dcodeIO/setup-node-nvm@v2.0.0
         with:
@@ -38,9 +39,9 @@ jobs:
       - name: Lint Files
         run: yarn lint
       - name: Build Production Binaries
-        run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion='$GITHUB_REF' --publish=never --config.directories.output=release
+        run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion='${{ GITHUB_REF }}' --publish=never --config.directories.output=release
       - name: upload production artifacts
         uses: actions/upload-artifact@v1
         with:
-          name: linux-$GITHUB_REF
-          path: release
+          name: linux-${{ GITHUB_REF }}
+          path: release/*.deb
