@@ -1,0 +1,24 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build_linux:
+    runs-on: ubuntu-latest
+    env:
+      SIGNAL_ENV: production
+    steps:
+      - name: Checkout git repo
+        uses: actions/checkout@v1
+      - name: Set up node using nvm (version from .nvmrc)
+        uses: dcodeIO/setup-node-nvm@v2.0.0
+      - name: Install yarn
+        run: npm install yarn
+      - name: Generate and concat files
+        run: yarn generate
+      - name: Run Tests
+        run: yarn test
+      - name: Lint Files
+        run: yarn lint
+      - name: Build Production Binaries
+        run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion='$GITHUB_REF' --publish=never --config.directories.output=release
