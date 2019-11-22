@@ -17,6 +17,8 @@ jobs:
           node-version: 10.13
       - name: Install yarn
         run: npm install yarn
+      - name: Install Dependencies
+        run: yarn install --frozen-lockfile
       - name: Generate and concat files
         run: yarn generate
       - name: Run Tests
