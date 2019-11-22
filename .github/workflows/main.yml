@@ -10,7 +10,14 @@ jobs:
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v1
+      - name: Cache node modules
+        uses: actions/cache@v1
+        with:
+          path: node_modules
+          key: ${{ runner.OS }}-npm-${{ hashFiles('**/package-lock.json') }}
         # TODO: get this to detect .nvmrc
+      - name: Install apt packages
+        run: sudo apt-get install -y libgtk2.0-0 libgtk-3-0 libgconf-2-4 libasound2 libxtst6 libxss1 libnss3 xvfb hunspell-en-us
       - name: Set up node using nvm
         uses: dcodeIO/setup-node-nvm@v2.0.0
         with:
