@@ -1,6 +1,6 @@
 name: CI
 
-on: [push, pull_request]
+on: [pull_request]
 
 jobs:
   build_linux:
@@ -10,8 +10,10 @@ jobs:
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v1
-      - name: Set up node using nvm (version from .nvmrc)
+      - name: Set up node using nvm
         uses: dcodeIO/setup-node-nvm@v2.0.0
+      - name: Use node version from .nvmrc
+        run: nvm use
       - name: Install yarn
         run: npm install yarn
       - name: Generate and concat files
