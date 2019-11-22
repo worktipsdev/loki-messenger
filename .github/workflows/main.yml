@@ -42,5 +42,5 @@ jobs:
       - name: upload production artifacts
         uses: actions/upload-artifact@v1
         with:
-          name: ${{ runner.OS }}-${{ $GITHUB_REF }}
+          name: linux-$GITHUB_REF
           path: release
