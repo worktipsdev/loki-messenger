@@ -28,14 +28,19 @@ jobs:
         run: yarn install --frozen-lockfile
       - name: Generate and concat files
         run: yarn generate
-      - name: Run Tests
-        env:
-          DISPLAY: 9.0
-          LC_ALL: en_US
-        run: |
-          Xvfb -ac -screen scrn 1280x2000x24 :9.0 &
-          yarn test
+      # - name: Run Tests
+      #   env:
+      #     DISPLAY: 9.0
+      #     LC_ALL: en_US
+      #   run: |
+      #     Xvfb -ac -screen scrn 1280x2000x24 :9.0 &
+      #     yarn test
       - name: Lint Files
         run: yarn lint
       - name: Build Production Binaries
         run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion='$GITHUB_REF' --publish=never --config.directories.output=release
+      - name: upload production artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: ${{ runner.OS }}-${{ $GITHUB_REF }}
+          path: release
