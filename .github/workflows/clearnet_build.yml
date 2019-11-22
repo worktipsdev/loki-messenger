@@ -39,9 +39,9 @@ jobs:
       - name: Lint Files
         run: yarn lint
       - name: Build Production Binaries
-        run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion='${{ GITHUB_REF }}' --publish=never --config.directories.output=release
+        run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion=${{ github.ref }} --publish=never --config.directories.output=release
       - name: upload production artifacts
         uses: actions/upload-artifact@v1
         with:
-          name: linux-${{ GITHUB_REF }}
+          name: linux-${{ github.ref }}
           path: release/*.deb
