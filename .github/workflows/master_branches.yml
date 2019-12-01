@@ -13,7 +13,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        # MacOS requires development ID: https://github.com/electron-userland/electron-builder/issues/2069: [value1, ...valueN]
+        #os: [macos-latest, ubuntu-latest]
+        os: [ubuntu-latest]
     env:
       SIGNAL_ENV: production
     steps:
