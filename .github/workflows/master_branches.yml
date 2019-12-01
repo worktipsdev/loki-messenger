@@ -51,7 +51,7 @@ jobs:
         run: yarn lint
       - name: Build Production Binaries
         run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion=${{ github.ref }} --publish=never --config.directories.output=release
-      - name: upload production artifacts
+      - name: Upload Production Artifacts - ${{ runner.OS }}-${{ github.ref }}
         uses: actions/upload-artifact@v1
         with:
           name: ${{ runner.OS }}-${{ github.ref }}
