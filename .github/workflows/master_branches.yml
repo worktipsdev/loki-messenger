@@ -31,6 +31,8 @@ jobs:
       #   run: sudo apt-get install -y libgtk2.0-0 libgtk-3-0 libgconf-2-4 libasound2 libxtst6 libxss1 libnss3 xvfb hunspell-en-us
       - name: Set up node using nvm
         uses: dcodeIO/setup-node-nvm@v2.0.0
+        with:
+          node-version: 10.13
       - name: Install yarn
         run: npm install yarn --no-save
       - name: Install Dependencies
@@ -51,5 +53,6 @@ jobs:
       - name: Upload Production Artifacts
         uses: actions/upload-artifact@v1
         with:
-          name: ${{ runner.OS }}-${{ github.ref }}
+          #name: ${{ runner.OS }}-${{ github.ref }}
+          name: test-name-v1.0
           path: release
