@@ -56,5 +56,5 @@ jobs:
       - name: Upload Production Artifacts
         uses: actions/upload-artifact@v1
         with:
-          name: ${{ runner.OS }}-${{ "Production" }}
+          name: ${{ runner.OS }}-PRODUCTION
           path: release
