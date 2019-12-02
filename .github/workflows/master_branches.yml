@@ -13,12 +13,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # MacOS requires development ID: https://github.com/electron-userland/electron-builder/issues/2069: [value1, ...valueN]
+        # MacOS requires development ID: https://github.com/electron-userland/electron-builder/issues/2069
         #os: [macos-latest, ubuntu-latest]
         os: [ubuntu-latest]
     env:
-      SIGNAL_ENV: productioN
-      PRODUCTION_NAME: ${{ runner.OS }}-${{ github.ref }}
+      SIGNAL_ENV: production
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v1
@@ -30,10 +29,12 @@ jobs:
       #     key: ${{ runner.OS }}-npm-${{ hashFiles('yarn.lock') }}
       # - name: Install apt packages
       #   run: sudo apt-get install -y libgtk2.0-0 libgtk-3-0 libgconf-2-4 libasound2 libxtst6 libxss1 libnss3 xvfb hunspell-en-us
+      
+      # Use nvmrc file. Not currently possible. See https://github.community/t5/GitHub-Actions/Read-file-content-in-expressions/td-p/40030
       - name: Set up node using nvm
         uses: dcodeIO/setup-node-nvm@v2.0.0
         with:
-          node-version: $NODE_VERSION
+          node-version: 10.13.0
       - name: Install yarn
         run: npm install yarn --no-save
       - name: Install Dependencies
@@ -53,12 +54,10 @@ jobs:
         run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion=${{ github.ref }} --publish=never --config.directories.output=release
       
       - name: Check production name
-        run: echo $PRODUCTION_NAME && echo $(cat .nvmrc)
+        run: echo ${{ runner.OS }} && echo ${{ github.ref }}
                 
-      
       - name: Upload Production Artifacts
         uses: actions/upload-artifact@v1
         with:
-          #name: $PRODUCTION_NAME
-          name: test-name-v1.0
+          name: ${{ runner.OS }}-${{ github.ref }}
           path: release
