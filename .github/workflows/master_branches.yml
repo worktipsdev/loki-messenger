@@ -15,7 +15,7 @@ jobs:
       matrix:
         # MacOS requires development ID: https://github.com/electron-userland/electron-builder/issues/2069
         #os: [macos-latest, ubuntu-latest]
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
     env:
       SIGNAL_ENV: production
     steps:
@@ -58,3 +58,41 @@ jobs:
         with:
           name: ${{ runner.OS }}-PRODUCTION
           path: release
+
+
+  build_windows:
+    runs-on: windows-latest
+    env:
+      SIGNAL_ENV: production
+    steps:
+      - name: Checkout git repo
+        uses: actions/checkout@v1
+
+      - name: Setup Node
+        uses: actions/setup-node@v1.1.0
+        with:
+          version: 10.13.0
+      
+      - name: Install yarn
+        run: npm install yarn --no-save
+        
+      - name: Install Dependencies
+        run: yarn install --frozen-lockfile
+        
+      - name: Generate and concat files
+        run: yarn generate
+
+      - name: Lint Files
+        run: yarn lint
+        
+      - name: Build Production Binaries
+        run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion=${{ github.ref }} --publish=never --config.directories.output=release
+                
+      - name: Upload Production Artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: ${{ runner.OS }}-PRODUCTION
+          path: release
+
+
+  
