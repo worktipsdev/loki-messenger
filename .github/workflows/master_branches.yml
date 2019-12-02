@@ -15,9 +15,10 @@ jobs:
       matrix:
         # MacOS requires development ID: https://github.com/electron-userland/electron-builder/issues/2069
         #os: [macos-latest, ubuntu-latest]
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, windows-latest]
     env:
       SIGNAL_ENV: production
+      PRODUCTION_NAME: ${{ runner.OS }}-${{ "Production" }}
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v1
@@ -52,12 +53,9 @@ jobs:
         run: yarn lint
       - name: Build Production Binaries
         run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion=${{ github.ref }} --publish=never --config.directories.output=release
-      
-      - name: Check production name
-        run: echo ${{ runner.OS }} && echo ${{ github.ref }}
                 
       - name: Upload Production Artifacts
         uses: actions/upload-artifact@v1
         with:
-          name: ${{ runner.OS }}-${{ github.ref }}
+          name: $PRODUCTION_NAME
           path: release
