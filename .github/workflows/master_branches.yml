@@ -18,7 +18,6 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     env:
       SIGNAL_ENV: production
-      PRODUCTION_NAME: ${{ runner.OS }}-${{ "Production" }}
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v1
@@ -57,5 +56,5 @@ jobs:
       - name: Upload Production Artifacts
         uses: actions/upload-artifact@v1
         with:
-          name: $PRODUCTION_NAME
+          name: ${{ runner.OS }}-${{ "Production" }}
           path: release
