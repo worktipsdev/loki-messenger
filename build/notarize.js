@@ -40,6 +40,6 @@ exports.default = async function notarizing(context) {
     appleId: SIGNING_APPLE_ID,
     appleIdPassword: SIGNING_APP_PASSWORD,
   };
-  if (!isEmpty(SIGNING_TEAM_ID)) options[ascProvider] = SIGNING_TEAM_ID;
+  if (!isEmpty(SIGNING_TEAM_ID)) options.ascProvider = SIGNING_TEAM_ID;
   return notarize(options);
 };

@@ -9,13 +9,18 @@ on:
       - github_actions
 
 jobs:
-  build_unix:
+  build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest]
     env:
       SIGNAL_ENV: production
+      CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+      SIGNING_APPLE_ID: ${{ secrets.SIGNING_APPLE_ID }}
+      SIGNING_APP_PASSWORD: ${{ secrets.SIGNING_APP_PASSWORD }}
+      SIGNING_TEAM_ID: ${{ secrets.SIGNING_TEAM_ID }}
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v1
@@ -29,32 +34,23 @@ jobs:
       #   run: sudo apt-get install -y libgtk2.0-0 libgtk-3-0 libgconf-2-4 libasound2 libxtst6 libxss1 libnss3 xvfb hunspell-en-us
 
       # Use nvmrc file. Not currently possible. See https://github.community/t5/GitHub-Actions/Read-file-content-in-expressions/td-p/40030
-      - name: Set up Mac OS
-        if: runner.OS == 'macOS'
-        working-directory: ./build
-        run: ./setup_mac.sh
-        env:
-          CERTIFICATE_DECRYPTION_PASSWORD: ${{ secrets.CERTIFICATE_DECRYPTION_PASSWORD }}
-          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
       - name: Set up node using nvm
         uses: dcodeIO/setup-node-nvm@v2.0.0
         with:
           node-version: 10.13.0
+
       - name: Install yarn
         run: npm install yarn --no-save
+
       - name: Install Dependencies
         run: yarn install --frozen-lockfile
+
       - name: Generate and concat files
         run: yarn generate
-      # - name: Run Tests
-      #   env:
-      #     DISPLAY: 9.0
-      #     LC_ALL: en_US
-      #   run: |
-      #     Xvfb -ac -screen scrn 1280x2000x24 :9.0 &
-      #     yarn test
+
       - name: Lint Files
         run: yarn lint
+
       - name: Build Production Binaries
         run: $(yarn bin)/electron-builder --config.extraMetadata.environment=$SIGNAL_ENV --config.mac.bundleVersion=${{ github.ref }} --publish=never --config.directories.output=release
 
