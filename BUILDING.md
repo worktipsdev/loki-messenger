@@ -14,7 +14,7 @@ Once you have your `Developer ID Application` you need to export it into a `.p12
 
 Encrypt the file using the following command, replacing `PASS` with a **SECURE PASSWORD**:
 ```
-openssl enc -aes-256-cbc -salt -in certificate.p12 -out certificate.p12.enc -k PASS
+openssl enc -aes-256-cbc -salt -in certificate.p12 -out certificate.p12.enc -k PASS -md sha256
 ```
 
 Once encrypted, move `certificate.p12.enc` into the build folder and commit the file into git.

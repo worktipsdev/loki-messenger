@@ -7,7 +7,7 @@ KEYCHAIN_PASSWORD=`openssl rand -base64 32`
 # Decrypt the file
 echo "Decrypting Developer ID Certificate"
 mkdir $SECRETS
-openssl enc -aes-256-cbc -d -in certificate.p12.enc -out $SECRETS/certificate.p12 -k "$CERTIFICATE_DECRYPTION_PASSWORD"
+openssl enc -aes-256-cbc -d -in certificate.p12.enc -out $SECRETS/certificate.p12 -k "$CERTIFICATE_DECRYPTION_PASSWORD" -md sha256
 
 # Create keychain
 echo "Creating Keychain"
