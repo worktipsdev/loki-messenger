@@ -15,7 +15,6 @@ security create-keychain -p $KEYCHAIN_PASSWORD $KEYCHAIN
 security list-keychains -s $KEYCHAIN
 security default-keychain -s $KEYCHAIN
 security unlock-keychain -p $KEYCHAIN_PASSWORD $KEYCHAIN
-security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions $KEYCHAIN
 security set-keychain-settings $KEYCHAIN # Disable auto lock
 
 # Add certificate to keychain
