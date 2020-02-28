@@ -1,9 +1,9 @@
 /* eslint-disable no-await-in-loop */
 /* eslint-disable no-loop-func */
-/* global log, dcodeIO, window, callWorker, lokiP2pAPI, lokiSnodeAPI, textsecure */
+/* global log, dcodeIO, window, callWorker, lokiSnodeAPI, textsecure */
 
 const _ = require('lodash');
-const { rpc } = require('./loki_rpc');
+const { lokiRpc } = require('./loki_rpc');
 
 const DEFAULT_CONNECTIONS = 3;
 const MAX_ACCEPTABLE_FAILURES = 1;
@@ -38,38 +38,6 @@ const calcNonce = (messageEventData, pubKey, data64, timestamp, ttl) => {
   return callWorker('calcPoW', timestamp, ttl, pubKey, data64, difficulty);
 };
 
-const trySendP2p = async (pubKey, data64, isPing, messageEventData) => {
-  if (typeof lokiP2pAPI === 'undefined') {
-    return false;
-  }
-  const p2pDetails = lokiP2pAPI.getContactP2pDetails(pubKey);
-  if (!p2pDetails || (!isPing && !p2pDetails.isOnline)) {
-    return false;
-  }
-  try {
-    await rpc(p2pDetails.address, p2pDetails.port, 'store', {
-      data: data64,
-    });
-    lokiP2pAPI.setContactOnline(pubKey);
-    window.Whisper.events.trigger('p2pMessageSent', messageEventData);
-    if (isPing) {
-      log.info(`Successfully pinged ${pubKey}`);
-    } else {
-      log.info(`Successful p2p message to ${pubKey}`);
-    }
-    return true;
-  } catch (e) {
-    lokiP2pAPI.setContactOffline(pubKey);
-    if (isPing) {
-      // If this was just a ping, we don't bother sending to storage server
-      log.warn('Ping failed, contact marked offline', e);
-      return true;
-    }
-    log.warn('Failed to send P2P message, falling back to storage', e);
-    return false;
-  }
-};
-
 class LokiMessageAPI {
   constructor(ourKey) {
     this.jobQueue = new window.JobQueue();
@@ -79,7 +47,6 @@ class LokiMessageAPI {
 
   async sendMessage(pubKey, data, messageTimeStamp, ttl, options = {}) {
     const {
-      isPing = false,
       isPublic = false,
       numConnections = DEFAULT_CONNECTIONS,
       publicSendData = null,
@@ -108,15 +75,6 @@ class LokiMessageAPI {
     }
 
     const data64 = dcodeIO.ByteBuffer.wrap(data).toString('base64');
-    const p2pSuccess = await trySendP2p(
-      pubKey,
-      data64,
-      isPing,
-      messageEventData
-    );
-    if (p2pSuccess) {
-      return;
-    }
 
     const timestamp = Date.now();
     const nonce = await calcNonce(
@@ -175,7 +133,6 @@ class LokiMessageAPI {
     try {
       // eslint-disable-next-line more/no-then
       success = await firstTrue(promises);
-      window.mixpanel.track('Sent Message Using Swarm API');
     } catch (e) {
       if (e instanceof textsecure.WrongDifficultyError) {
         // Force nonce recalculation
@@ -189,7 +146,6 @@ class LokiMessageAPI {
       throw e;
     }
     if (!success) {
-      window.mixpanel.track('Failed to Send Message Using Swarm API');
       throw new window.textsecure.EmptySwarmError(
         pubKey,
         'Ran out of swarm nodes to query'
@@ -213,6 +169,7 @@ class LokiMessageAPI {
       const successfulSend = await this.sendToNode(
         snode.ip,
         snode.port,
+        snode,
         params
       );
       if (successfulSend) {
@@ -237,12 +194,20 @@ class LokiMessageAPI {
     return false;
   }
 
-  async sendToNode(address, port, params) {
+  async sendToNode(address, port, targetNode, params) {
     let successiveFailures = 0;
     while (successiveFailures < MAX_ACCEPTABLE_FAILURES) {
       await sleepFor(successiveFailures * 500);
       try {
-        const result = await rpc(`https://${address}`, port, 'store', params);
+        const result = await lokiRpc(
+          `https://${address}`,
+          port,
+          'store',
+          params,
+          {},
+          '/storage_rpc/v1',
+          targetNode
+        );
 
         // Make sure we aren't doing too much PoW
         const currentDifficulty = window.storage.get('PoWDifficulty', null);
@@ -252,9 +217,8 @@ class LokiMessageAPI {
         }
         return true;
       } catch (e) {
-        log.warn('Loki send message:', e);
+        log.warn('Loki send message error:', e.code, e.message, `from ${address}`);
         if (e instanceof textsecure.WrongSwarmError) {
-          window.mixpanel.track('Migrated Snode');
           const { newSwarm } = e;
           await lokiSnodeAPI.updateSwarmNodes(params.pubKey, newSwarm);
           this.sendingData[params.timestamp].swarm = newSwarm;
@@ -308,6 +272,8 @@ class LokiMessageAPI {
         try {
           // TODO: Revert back to using snode address instead of IP
           let messages = await this.retrieveNextMessages(nodeData.ip, nodeData);
+          // this only tracks retrieval failures
+          // won't include parsing failures...
           successiveFailures = 0;
           if (messages.length) {
             const lastMessage = _.last(messages);
@@ -324,7 +290,12 @@ class LokiMessageAPI {
           // Execute callback even with empty array to signal online status
           callback(messages);
         } catch (e) {
-          log.warn('Loki retrieve messages:', e);
+          log.warn(
+            'Loki retrieve messages error:',
+            e.code,
+            e.message,
+            `on ${nodeData.ip}:${nodeData.port}`
+          );
           if (e instanceof textsecure.WrongSwarmError) {
             const { newSwarm } = e;
             await lokiSnodeAPI.updateSwarmNodes(this.ourKey, newSwarm);
@@ -348,9 +319,24 @@ class LokiMessageAPI {
         }
       }
       if (successiveFailures >= MAX_ACCEPTABLE_FAILURES) {
+        log.warn(
+          `removing ${nodeData.ip}:${
+            nodeData.port
+          } from our swarm pool. We have ${
+            Object.keys(this.ourSwarmNodes).length
+          } usable swarm nodes left`
+        );
         await lokiSnodeAPI.unreachableNode(this.ourKey, address);
       }
     }
+    // if not stopPollingResult
+    if (_.isEmpty(this.ourSwarmNodes)) {
+      log.error(
+        'We no longer have any swarm nodes available to try in pool, closing retrieve connection'
+      );
+      return false;
+    }
+    return true;
   }
 
   async retrieveNextMessages(nodeUrl, nodeData) {
@@ -365,31 +351,51 @@ class LokiMessageAPI {
       },
     };
 
-    const result = await rpc(
+    const result = await lokiRpc(
       `https://${nodeUrl}`,
       nodeData.port,
       'retrieve',
       params,
-      options
+      options,
+      '/storage_rpc/v1',
+      nodeData
     );
     return result.messages || [];
   }
 
   async startLongPolling(numConnections, stopPolling, callback) {
+    log.info('startLongPolling for', numConnections, 'connections');
     this.ourSwarmNodes = {};
     let nodes = await lokiSnodeAPI.getSwarmNodesForPubKey(this.ourKey);
+    log.info('swarmNodes', nodes.length, 'for', this.ourKey);
+    Object.keys(nodes).forEach(j => {
+      const node = nodes[j];
+      log.info(`${j} ${node.ip}:${node.port}`);
+    });
     if (nodes.length < numConnections) {
-      await lokiSnodeAPI.refreshSwarmNodesForPubKey(this.ourKey);
-      nodes = await lokiSnodeAPI.getSwarmNodesForPubKey(this.ourKey);
+      log.warn(
+        'Not enough SwarmNodes for our pubkey in local database, getting current list from blockchain'
+      );
+      nodes = await lokiSnodeAPI.refreshSwarmNodesForPubKey(this.ourKey);
+      if (nodes.length < numConnections) {
+        log.error(
+          'Could not get enough SwarmNodes for our pubkey from blockchain'
+        );
+      }
     }
+    log.info(
+      `There are currently ${
+        nodes.length
+      } swarmNodes for pubKey in our local database`
+    );
+
     for (let i = 0; i < nodes.length; i += 1) {
       const lastHash = await window.Signal.Data.getLastHashBySnode(
         nodes[i].address
       );
       this.ourSwarmNodes[nodes[i].address] = {
+        ...nodes[i],
         lastHash,
-        ip: nodes[i].ip,
-        port: nodes[i].port,
       };
     }
 
@@ -399,9 +405,13 @@ class LokiMessageAPI {
       promises.push(this.openRetrieveConnection(stopPolling, callback));
     }
 
-    // blocks until all snodes in our swarms have been removed from the list
+    // blocks until numConnections snodes in our swarms have been removed from the list
+    // less than numConnections being active is fine, only need to restart if none per Niels 20/02/13
     // or if there is network issues (ENOUTFOUND due to lokinet)
     await Promise.all(promises);
+    log.error('All our long poll swarm connections have been removed');
+    // should we just call ourself again?
+    // no, our caller already handles this...
   }
 }
 

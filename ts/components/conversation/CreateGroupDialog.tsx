@@ -2,6 +2,8 @@ import React from 'react';
 import classNames from 'classnames';
 import { Contact, MemberList } from './MemberList';
 
+import { SessionModal } from './../session/SessionModal';
+
 declare global {
   interface Window {
     Lodash: any;
@@ -37,6 +39,7 @@ export class CreateGroupDialog extends React.Component<Props, State> {
     this.onGroupNameChanged = this.onGroupNameChanged.bind(this);
 
     let friends = this.props.friendList;
+
     friends = friends.map(d => {
       const lokiProfile = d.getLokiProfile();
       const name = lokiProfile ? lokiProfile.displayName : 'Anonymous';
@@ -92,8 +95,9 @@ export class CreateGroupDialog extends React.Component<Props, State> {
     );
 
     return (
-      <div className="content">
-        <p className="titleText">{titleText}</p>
+      <SessionModal title={titleText} onClose={this.closeDialog} onOk={() => null}>
+        <div className="spacer-lg" />
+
         <p className={errorMessageClasses}>{this.state.errorMessage}</p>
         <input
           type="text"
@@ -115,6 +119,9 @@ export class CreateGroupDialog extends React.Component<Props, State> {
             onMemberClicked={this.onMemberClicked}
           />
         </div>
+
+        <div className="spacer-lg" />
+
         <div className="buttons">
           <button className="cancel" tabIndex={0} onClick={this.closeDialog}>
             {cancelText}
@@ -123,7 +130,7 @@ export class CreateGroupDialog extends React.Component<Props, State> {
             {okText}
           </button>
         </div>
-      </div>
+      </SessionModal>
     );
   }
 
@@ -190,10 +197,10 @@ export class CreateGroupDialog extends React.Component<Props, State> {
 
     if (
       updatedFriends.filter(d => d.checkmarked).length >
-      window.SMALL_GROUP_SIZE_LIMIT - 1
+      window.CONSTANTS.SMALL_GROUP_SIZE_LIMIT - 1
     ) {
       const msg = `${this.props.i18n('maxGroupMembersError')} ${
-        window.SMALL_GROUP_SIZE_LIMIT
+        window.CONSTANTS.SMALL_GROUP_SIZE_LIMIT
       }`;
       this.onShowError(msg);
 

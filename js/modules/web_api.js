@@ -222,7 +222,7 @@ function _promiseAjax(providedUrl, options) {
       method: options.type,
       body: options.data || null,
       headers: {
-        'User-Agent': 'Loki Messenger',
+        'User-Agent': 'Session',
         'X-Loki-Messenger-Agent': 'OWD',
         ...options.headers,
       },
@@ -865,7 +865,7 @@ function initialize({
         filename: 'attachment',
       });
 
-      return lokiFileServerAPI.uploadPrivateAttachment(formData);
+      return lokiFileServerAPI.constructor.uploadPrivateAttachment(formData);
     }
 
     function putAvatar(bin) {

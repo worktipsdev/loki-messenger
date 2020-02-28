@@ -1,6 +1,5 @@
 import React from 'react';
 
-import { ContactName } from './ContactName';
 import { Avatar } from '../Avatar';
 import { Colors, LocalizerType } from '../../types/Util';
 import {
@@ -10,7 +9,19 @@ import {
   SubMenu,
 } from 'react-contextmenu';
 
-interface TimerOption {
+import {
+  SessionIconButton,
+  SessionIconSize,
+  SessionIconType,
+} from '../session/icon';
+
+import {
+  SessionButton,
+  SessionButtonColor,
+  SessionButtonType,
+} from '../session/SessionButton';
+
+export interface TimerOption {
   name: string;
   value: number;
 }
@@ -21,7 +32,6 @@ interface Props {
 
   phoneNumber: string;
   profileName?: string;
-  color: string;
   avatarPath?: string;
 
   isVerified: boolean;
@@ -33,7 +43,13 @@ interface Props {
   isRss: boolean;
   amMod: boolean;
 
+  // We might not always have the full list of members,
+  // e.g. for open groups where we could have thousands
+  // of members. We'll keep this for now (for closed chats)
   members: Array<any>;
+
+  // not equal members.length (see above)
+  subscriberCount?: number;
 
   expirationSettingName?: string;
   showBackButton: boolean;
@@ -45,10 +61,15 @@ interface Props {
   isFriendRequestPending: boolean;
   isOnline?: boolean;
 
+  selectedMessages: any;
+
   onSetDisappearingMessages: (seconds: number) => void;
   onDeleteMessages: () => void;
   onDeleteContact: () => void;
   onResetSession: () => void;
+
+  onCloseOverlay: () => void;
+  onDeleteSelectedMessages: () => void;
 
   onArchive: () => void;
   onMoveToInbox: () => void;
@@ -66,20 +87,18 @@ interface Props {
 
   onCopyPublicKey: () => void;
 
-  onUpdateGroup: () => void;
   onLeaveGroup: () => void;
   onAddModerators: () => void;
   onRemoveModerators: () => void;
   onInviteFriends: () => void;
-
-  onShowUserDetails?: (userPubKey: string) => void;
+  onAvatarClick?: (userPubKey: string) => void;
 
   i18n: LocalizerType;
 }
 
 export class ConversationHeader extends React.Component<Props> {
   public showMenuBound: (event: React.MouseEvent<HTMLDivElement>) => void;
-  public onShowUserDetailsBound: (userPubKey: string) => void;
+  public onAvatarClickBound: (userPubKey: string) => void;
   public menuTriggerRef: React.RefObject<any>;
 
   public constructor(props: Props) {
@@ -87,7 +106,7 @@ export class ConversationHeader extends React.Component<Props> {
 
     this.menuTriggerRef = React.createRef();
     this.showMenuBound = this.showMenu.bind(this);
-    this.onShowUserDetailsBound = this.onShowUserDetails.bind(this);
+    this.onAvatarClickBound = this.onAvatarClick.bind(this);
   }
 
   public showMenu(event: React.MouseEvent<HTMLDivElement>) {
@@ -119,6 +138,10 @@ export class ConversationHeader extends React.Component<Props> {
       profileName,
       isFriend,
       isGroup,
+      isPublic,
+      isRss,
+      members,
+      subscriberCount,
       isFriendRequestPending,
       isMe,
       name,
@@ -132,11 +155,26 @@ export class ConversationHeader extends React.Component<Props> {
       );
     }
 
+    const memberCount: number = (() => {
+      if (!isGroup || isRss) {
+        return 0;
+      }
+
+      if (isPublic) {
+        return subscriberCount || 0;
+      } else {
+        return members.length;
+      }
+    })();
+
     let text = '';
     if (isFriendRequestPending) {
-      text = `(${i18n('pending')})`;
+      text = i18n('pendingAcceptance');
     } else if (!isFriend && !isGroup) {
-      text = `(${i18n('notFriends')})`;
+      text = i18n('notFriends');
+    } else if (memberCount > 0) {
+      const count = String(memberCount);
+      text = i18n('members', [count]);
     }
 
     const textEl =
@@ -144,14 +182,20 @@ export class ConversationHeader extends React.Component<Props> {
         <span className="module-conversation-header__title-text">{text}</span>
       );
 
+    let title;
+    if (profileName) {
+      title = `${profileName} ${window.shortenPubkey(phoneNumber)}`;
+    } else {
+      if (name) {
+        title = `${name}`;
+      } else {
+        title = `User ${window.shortenPubkey(phoneNumber)}`;
+      }
+    }
+
     return (
       <div className="module-conversation-header__title">
-        <ContactName
-          phoneNumber={phoneNumber}
-          profileName={profileName}
-          name={name}
-          i18n={i18n}
-        />
+        <span className="module-contact-name__profile-name">{title}</span>
         {textEl}
       </div>
     );
@@ -160,7 +204,6 @@ export class ConversationHeader extends React.Component<Props> {
   public renderAvatar() {
     const {
       avatarPath,
-      color,
       i18n,
       isGroup,
       isMe,
@@ -177,7 +220,6 @@ export class ConversationHeader extends React.Component<Props> {
       <span className="module-conversation-header__avatar">
         <Avatar
           avatarPath={avatarPath}
-          color={color}
           conversationType={conversationType}
           i18n={i18n}
           noteToSelf={isMe}
@@ -186,9 +228,9 @@ export class ConversationHeader extends React.Component<Props> {
           profileName={profileName}
           size={28}
           borderColor={borderColor}
-          borderWidth={2}
+          borderWidth={0}
           onAvatarClick={() => {
-            this.onShowUserDetailsBound(phoneNumber);
+            this.onAvatarClickBound(phoneNumber);
           }}
         />
       </span>
@@ -212,7 +254,7 @@ export class ConversationHeader extends React.Component<Props> {
     );
   }
 
-  public renderGear(triggerId: string) {
+  public renderOptions(triggerId: string) {
     const { showBackButton } = this.props;
 
     if (showBackButton) {
@@ -220,11 +262,15 @@ export class ConversationHeader extends React.Component<Props> {
     }
 
     return (
-      <ContextMenuTrigger id={triggerId} ref={this.menuTriggerRef}>
-        <div
-          role="button"
+      <ContextMenuTrigger
+        id={triggerId}
+        ref={this.menuTriggerRef}
+        holdToDisplay={1}
+      >
+        <SessionIconButton
+          iconType={SessionIconType.Ellipses}
+          iconSize={SessionIconSize.Medium}
           onClick={this.showMenuBound}
-          className="module-conversation-header__gear-icon"
         />
       </ContextMenuTrigger>
     );
@@ -242,7 +288,6 @@ export class ConversationHeader extends React.Component<Props> {
       onDeleteMessages,
       onDeleteContact,
       onCopyPublicKey,
-      onUpdateGroup,
       onLeaveGroup,
       onAddModerators,
       onRemoveModerators,
@@ -256,11 +301,10 @@ export class ConversationHeader extends React.Component<Props> {
     return (
       <ContextMenu id={triggerId}>
         {this.renderPublicMenuItems()}
-        <MenuItem onClick={onCopyPublicKey}>{copyIdLabel}</MenuItem>
-        <MenuItem onClick={onDeleteMessages}>{i18n('deleteMessages')}</MenuItem>
-        {isPrivateGroup || amMod ? (
-          <MenuItem onClick={onUpdateGroup}>{i18n('updateGroup')}</MenuItem>
+        {!isRss ? (
+          <MenuItem onClick={onCopyPublicKey}>{copyIdLabel}</MenuItem>
         ) : null}
+        <MenuItem onClick={onDeleteMessages}>{i18n('deleteMessages')}</MenuItem>
         {amMod ? (
           <MenuItem onClick={onAddModerators}>{i18n('addModerators')}</MenuItem>
         ) : null}
@@ -291,47 +335,62 @@ export class ConversationHeader extends React.Component<Props> {
     );
   }
 
-  public render() {
-    const { id, isGroup, isPublic } = this.props;
-    const triggerId = `conversation-${id}-${Date.now()}`;
-
-    const isPrivateGroup = isGroup && !isPublic;
+  public renderSelectionOverlay() {
+    const { onDeleteSelectedMessages, onCloseOverlay, i18n } = this.props;
 
     return (
-      <div className="module-conversation-header">
-        {this.renderBackButton()}
-        <div className="module-conversation-header__title-container">
-          <div className="module-conversation-header__title-flex">
-            {this.renderAvatar()}
-            {this.renderTitle()}
-            {isPrivateGroup ? this.renderMemberCount() : null}
-          </div>
+      <div className="message-selection-overlay">
+        <div className="close-button">
+          <SessionIconButton
+            iconType={SessionIconType.Exit}
+            iconSize={SessionIconSize.Medium}
+            onClick={onCloseOverlay}
+          />
         </div>
-        {this.renderExpirationLength()}
-        {this.renderGear(triggerId)}
-        {this.renderMenu(triggerId)}
+
+        <div className="button-group">
+          <SessionButton
+            buttonType={SessionButtonType.Default}
+            buttonColor={SessionButtonColor.Danger}
+            text={i18n('delete')}
+            onClick={onDeleteSelectedMessages}
+          />
+        </div>
       </div>
     );
   }
 
-  public onShowUserDetails(userPubKey: string) {
-    if (this.props.onShowUserDetails) {
-      this.props.onShowUserDetails(userPubKey);
-    }
-  }
-
-  private renderMemberCount() {
-    const memberCount = this.props.members.length;
-
-    if (memberCount === 0) {
-      return null;
-    }
-
-    const wordForm = memberCount === 1 ? 'member' : 'members';
+  public render() {
+    const { id } = this.props;
+    const triggerId = `conversation-${id}-${Date.now()}`;
 
     return (
-      <span className="member-preview">{`(${memberCount} ${wordForm})`}</span>
+      <>
+        {this.renderSelectionOverlay()}
+        <div className="module-conversation-header">
+          {this.renderBackButton()}
+          <div className="module-conversation-header__title-container">
+            <div className="module-conversation-header__title-flex">
+              {this.renderOptions(triggerId)}
+              {this.renderTitle()}
+              {/* This might be redundant as we show the title in the title: */}
+              {/*isPrivateGroup ? this.renderMemberCount() : null*/}
+            </div>
+          </div>
+          {this.renderExpirationLength()}
+
+          {!this.props.isRss && this.renderAvatar()}
+
+          {this.renderMenu(triggerId)}
+        </div>
+      </>
     );
+  }
+
+  public onAvatarClick(userPubKey: string) {
+    if (this.props.onAvatarClick) {
+      this.props.onAvatarClick(userPubKey);
+    }
   }
 
   private renderPublicMenuItems() {
@@ -394,7 +453,8 @@ export class ConversationHeader extends React.Component<Props> {
       <MenuItem onClick={onResetSession}>{i18n('resetSession')}</MenuItem>
     );
     const blockHandlerMenuItem = !isMe &&
-      !isGroup && <MenuItem onClick={blockHandler}>{blockTitle}</MenuItem>;
+      !isGroup &&
+      !isRss && <MenuItem onClick={blockHandler}>{blockTitle}</MenuItem>;
     const changeNicknameMenuItem = !isMe &&
       !isGroup && (
         <MenuItem onClick={onChangeNickname}>{i18n('changeNickname')}</MenuItem>

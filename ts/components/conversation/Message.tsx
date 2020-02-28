@@ -31,6 +31,7 @@ import { getIncrement } from '../../util/timer';
 import { isFileDangerous } from '../../util/isFileDangerous';
 import { ColorType, LocalizerType } from '../../types/Util';
 import { ContextMenu, ContextMenuTrigger, MenuItem } from 'react-contextmenu';
+import { SessionIcon, SessionIconSize, SessionIconType } from '../session/icon';
 
 declare global {
   interface Window {
@@ -96,7 +97,6 @@ export interface Props {
   expirationLength?: number;
   expirationTimestamp?: number;
   convoId: string;
-  isP2p?: boolean;
   isPublic?: boolean;
   isRss?: boolean;
   selected: boolean;
@@ -213,13 +213,9 @@ export class Message extends React.PureComponent<Props, State> {
   }
 
   public renderMetadataBadges() {
-    const { direction, isP2p, isPublic, senderIsModerator } = this.props;
+    const { direction, isPublic, senderIsModerator } = this.props;
 
-    const badges = [
-      isPublic && 'Public',
-      isP2p && 'P2p',
-      senderIsModerator && 'Mod',
-    ];
+    const badges = [isPublic && 'Public', senderIsModerator && 'Mod'];
 
     return badges
       .map(badgeText => {
@@ -228,17 +224,22 @@ export class Message extends React.PureComponent<Props, State> {
         }
 
         return (
-          <span
-            className={classNames(
-              'module-message__metadata__badge',
-              `module-message__metadata__badge--${direction}`,
-              `module-message__metadata__badge--${badgeText.toLowerCase()}`,
-              `module-message__metadata__badge--${badgeText.toLowerCase()}--${direction}`
-            )}
-            key={badgeText}
-          >
-            &nbsp;•&nbsp;{badgeText}
-          </span>
+          <>
+            <span className="module-message__metadata__badge--separator">
+              &nbsp;•&nbsp;
+            </span>
+            <span
+              className={classNames(
+                'module-message__metadata__badge',
+                `module-message__metadata__badge--${direction}`,
+                `module-message__metadata__badge--${badgeText.toLowerCase()}`,
+                `module-message__metadata__badge--${badgeText.toLowerCase()}--${direction}`
+              )}
+              key={badgeText}
+            >
+              {badgeText}
+            </span>
+          </>
         );
       })
       .filter(i => !!i);
@@ -311,16 +312,14 @@ export class Message extends React.PureComponent<Props, State> {
             <Spinner size="mini" direction={direction} />
           </div>
         ) : null}
+        <span className="module-message__metadata__spacer" />
         {!textPending && direction === 'outgoing' && status !== 'error' ? (
-          <div
-            className={classNames(
-              'module-message__metadata__status-icon',
-              `module-message__metadata__status-icon--${status}`,
-              withImageNoCaption
-                ? 'module-message__metadata__status-icon--with-image-no-caption'
-                : null
-            )}
-          />
+          <div className="message-read-receipt-container">
+            <SessionIcon
+              iconType={SessionIconType.Check}
+              iconSize={SessionIconSize.Small}
+            />
+          </div>
         ) : null}
       </div>
     );
@@ -1088,8 +1087,9 @@ export class Message extends React.PureComponent<Props, State> {
     const isIncoming = direction === 'incoming';
     const shouldHightlight = mentionMe && isIncoming && this.props.isPublic;
     const divClasses = ['loki-message-wrapper'];
+
     if (shouldHightlight) {
-      divClasses.push('message-highlighted');
+      //divClasses.push('message-highlighted');
     }
     if (selected) {
       divClasses.push('message-selected');
@@ -1102,19 +1102,8 @@ export class Message extends React.PureComponent<Props, State> {
     const enableContextMenu = !isRss && !multiSelectMode;
 
     return (
-      <div
-        className={classNames(divClasses)}
-        role="button"
-        onClick={() => {
-          const selection = window.getSelection();
-          if (selection && selection.type === 'Range') {
-            return;
-          }
-          this.props.onSelectMessage();
-        }}
-      >
+      <div className={classNames(divClasses)}>
         <ContextMenuTrigger id={rightClickTriggerId}>
-          {this.renderCheckBox()}
           {this.renderAvatar()}
           <div
             className={classNames(
@@ -1122,6 +1111,14 @@ export class Message extends React.PureComponent<Props, State> {
               `module-message--${direction}`,
               expiring ? 'module-message--expired' : null
             )}
+            role="button"
+            onClick={() => {
+              const selection = window.getSelection();
+              if (selection && selection.type === 'Range') {
+                return;
+              }
+              this.props.onSelectMessage();
+            }}
           >
             {this.renderError(isIncoming)}
             {isRss ? null : this.renderMenu(!isIncoming, triggerId)}
@@ -1156,26 +1153,6 @@ export class Message extends React.PureComponent<Props, State> {
               : null}
           </div>
         </ContextMenuTrigger>
-      </div>
-    );
-  }
-
-  private renderCheckBox() {
-    const classes = ['check-box-container'];
-
-    if (this.props.multiSelectMode) {
-      classes.push('check-box-visible');
-    } else {
-      classes.push('check-box-invisible');
-    }
-
-    if (this.props.selected) {
-      classes.push('check-box-selected');
-    }
-
-    return (
-      <div className={classNames(classes)}>
-        <span className="module-message__check-box">✓</span>
       </div>
     );
   }

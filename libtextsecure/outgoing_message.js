@@ -14,6 +14,23 @@
 /* eslint-disable no-unreachable */
 const NUM_SEND_CONNECTIONS = 3;
 
+const getTTLForType = type => {
+  switch (type) {
+    case 'friend-request':
+      return 4 * 24 * 60 * 60 * 1000; // 4 days for friend request message
+    case 'device-unpairing':
+      return 4 * 24 * 60 * 60 * 1000; // 4 days for device unpairing
+    case 'onlineBroadcast':
+      return 60 * 1000; // 1 minute for online broadcast message
+    case 'typing':
+      return 60 * 1000; // 1 minute for typing indicators
+    case 'pairing-request':
+      return 2 * 60 * 1000; // 2 minutes for pairing requests
+    default:
+      return (window.getMessageTTL() || 24) * 60 * 60 * 1000; // 1 day default for any other message
+  }
+};
+
 function OutgoingMessage(
   server,
   timestamp,
@@ -55,6 +72,11 @@ function OutgoingMessage(
     options || {};
   this.numberInfo = numberInfo;
   this.isPublic = isPublic;
+  this.isGroup = !!(
+    this.message &&
+    this.message.dataMessage &&
+    this.message.dataMessage.group
+  );
   this.publicSendData = publicSendData;
   this.senderCertificate = senderCertificate;
   this.online = online;
@@ -249,9 +271,15 @@ OutgoingMessage.prototype = {
     return this.convertMessageToText(messageBuffer);
   },
   async wrapInWebsocketMessage(outgoingObject) {
+    const source =
+      outgoingObject.type ===
+      textsecure.protobuf.Envelope.Type.UNIDENTIFIED_SENDER
+        ? null
+        : outgoingObject.ourKey;
+
     const messageEnvelope = new textsecure.protobuf.Envelope({
       type: outgoingObject.type,
-      source: outgoingObject.ourKey,
+      source,
       sourceDevice: outgoingObject.sourceDevice,
       timestamp: this.timestamp,
       content: outgoingObject.content,
@@ -289,39 +317,9 @@ OutgoingMessage.prototype = {
 
     this.numbers = devicesPubKeys;
 
-    /* Disabled because i'm not sure how senderCertificate works :thinking:
-    const { numberInfo, senderCertificate } = this;
-    const info = numberInfo && numberInfo[number] ? numberInfo[number] : {};
-    const { accessKey } = info || {};
-
-    if (accessKey && !senderCertificate) {
-      return Promise.reject(
-        new Error(
-          'OutgoingMessage.doSendMessage: accessKey was provided, ' +
-          'but senderCertificate was not'
-        )
-      );
-    }
-
-    const sealedSender = Boolean(accessKey && senderCertificate);
-
-    // We don't send to ourselves if unless sealedSender is enabled
-    const ourNumber = textsecure.storage.user.getNumber();
-    const ourDeviceId = textsecure.storage.user.getDeviceId();
-    if (number === ourNumber && !sealedSender) {
-      // eslint-disable-next-line no-param-reassign
-      deviceIds = _.reject(
-        deviceIds,
-        deviceId =>
-          // because we store our own device ID as a string at least sometimes
-          deviceId === ourDeviceId || deviceId === parseInt(ourDeviceId, 10)
-      );
-    }
-    */
-
     return Promise.all(
       devicesPubKeys.map(async devicePubKey => {
-        // Loki Messenger doesn't use the deviceId scheme, it's always 1.
+        // Session doesn't use the deviceId scheme, it's always 1.
         // Instead, there are multiple device public keys.
         const deviceId = 1;
         const updatedDevices = await this.getStaleDeviceIdsForNumber(
@@ -339,9 +337,6 @@ OutgoingMessage.prototype = {
         );
         const ourKey = textsecure.storage.user.getNumber();
         const options = {};
-        const fallBackCipher = new libloki.crypto.FallBackSessionCipher(
-          address
-        );
 
         let isMultiDeviceRequest = false;
         let thisDeviceMessageType = this.messageType;
@@ -355,22 +350,33 @@ OutgoingMessage.prototype = {
           } catch (e) {
             // do nothing
           }
-          if (
-            conversation &&
-            !conversation.isFriend() &&
-            !conversation.hasReceivedFriendRequest()
-          ) {
-            // We want to send an automated friend request if:
-            // - We aren't already friends
-            // - We haven't received a friend request from this device
-            // - We haven't sent a friend request recently
-            if (conversation.friendRequestTimerIsExpired()) {
-              isMultiDeviceRequest = true;
-              thisDeviceMessageType = 'friend-request';
-            } else {
-              // Throttle automated friend requests
-              this.successfulNumbers.push(devicePubKey);
-              return null;
+          if (conversation && !this.isGroup) {
+            const isOurDevice = await conversation.isOurDevice();
+            const isFriends =
+              conversation.isFriend() ||
+              conversation.hasReceivedFriendRequest();
+            // We should only send a friend request to our device if we don't have keys
+            const shouldSendAutomatedFR = isOurDevice ? !keysFound : !isFriends;
+            if (shouldSendAutomatedFR) {
+              // We want to send an automated friend request if:
+              // - We aren't already friends
+              // - We haven't received a friend request from this device
+              // - We haven't sent a friend request recently
+              if (conversation.friendRequestTimerIsExpired()) {
+                isMultiDeviceRequest = true;
+                thisDeviceMessageType = 'friend-request';
+              } else {
+                // Throttle automated friend requests
+                this.successfulNumbers.push(devicePubKey);
+                return null;
+              }
+            }
+
+            // If we're not friends with our own device then we should become friends
+            if (isOurDevice && keysFound && !isFriends) {
+              conversation.setFriendRequestStatus(
+                window.friends.friendRequestStatusEnum.friends
+              );
             }
           }
         }
@@ -385,10 +391,11 @@ OutgoingMessage.prototype = {
           : null;
         const isEndSession =
           flags === textsecure.protobuf.DataMessage.Flags.END_SESSION;
+        const isSessionRequest =
+          flags === textsecure.protobuf.DataMessage.Flags.SESSION_REQUEST;
         const signalCipher = new libsignal.SessionCipher(
           textsecure.storage.protocol,
-          address,
-          options
+          address
         );
         if (enableFallBackEncryption || isEndSession) {
           // Encrypt them with the fallback
@@ -418,7 +425,7 @@ OutgoingMessage.prototype = {
         }
 
         if (enableFallBackEncryption) {
-          sessionCipher = fallBackCipher;
+          sessionCipher = new libloki.crypto.FallBackSessionCipher(address);
         } else {
           sessionCipher = signalCipher;
         }
@@ -429,42 +436,58 @@ OutgoingMessage.prototype = {
           options.messageKeysLimit = false;
         }
 
-        ciphers[address.getDeviceId()] = sessionCipher;
+        let content;
+        let type;
 
-        // Encrypt our plain text
-        const ciphertext = await sessionCipher.encrypt(plaintext);
-        if (!enableFallBackEncryption) {
-          // eslint-disable-next-line no-param-reassign
-          ciphertext.body = new Uint8Array(
-            dcodeIO.ByteBuffer.wrap(ciphertext.body, 'binary').toArrayBuffer()
+        if (window.lokiFeatureFlags.useSealedSender) {
+          const secretSessionCipher = new window.Signal.Metadata.SecretSessionCipher(
+            textsecure.storage.protocol
           );
-        }
-        const getTTL = type => {
-          switch (type) {
-            case 'friend-request':
-              return 4 * 24 * 60 * 60 * 1000; // 4 days for friend request message
-            case 'device-unpairing':
-              return 4 * 24 * 60 * 60 * 1000; // 4 days for device unpairing
-            case 'onlineBroadcast':
-              return 60 * 1000; // 1 minute for online broadcast message
-            case 'typing':
-              return 60 * 1000; // 1 minute for typing indicators
-            case 'pairing-request':
-              return 2 * 60 * 1000; // 2 minutes for pairing requests
-            default:
-              return (window.getMessageTTL() || 24) * 60 * 60 * 1000; // 1 day default for any other message
+          ciphers[address.getDeviceId()] = secretSessionCipher;
+
+          const senderCert = new textsecure.protobuf.SenderCertificate();
+
+          senderCert.sender = ourKey;
+          senderCert.senderDevice = deviceId;
+
+          const ciphertext = await secretSessionCipher.encrypt(
+            address,
+            senderCert,
+            plaintext,
+            sessionCipher
+          );
+
+          type = textsecure.protobuf.Envelope.Type.UNIDENTIFIED_SENDER;
+          content = window.Signal.Crypto.arrayBufferToBase64(ciphertext);
+        } else {
+          // TODO: probably remove this branch once
+          // mobile clients implement sealed sender
+          ciphers[address.getDeviceId()] = sessionCipher;
+
+          const ciphertext = await sessionCipher.encrypt(plaintext);
+          if (!enableFallBackEncryption) {
+            // eslint-disable-next-line no-param-reassign
+            ciphertext.body = new Uint8Array(
+              dcodeIO.ByteBuffer.wrap(ciphertext.body, 'binary').toArrayBuffer()
+            );
           }
-        };
-        const ttl = getTTL(thisDeviceMessageType);
+
+          // eslint-disable-next-line prefer-destructuring
+          type = ciphertext.type;
+          content = ciphertext.body;
+        }
+
+        const ttl = getTTLForType(thisDeviceMessageType);
 
         return {
-          type: ciphertext.type, // FallBackSessionCipher sets this to FRIEND_REQUEST
+          type, // FallBackSessionCipher sets this to FRIEND_REQUEST
           ttl,
           ourKey,
           sourceDevice: 1,
-          destinationRegistrationId: ciphertext.registrationId,
-          content: ciphertext.body,
+          content,
           pubKey: devicePubKey,
+          isFriendRequest: enableFallBackEncryption,
+          isSessionRequest,
         };
       })
     )
@@ -474,7 +497,12 @@ OutgoingMessage.prototype = {
           if (!outgoingObject) {
             return;
           }
-          const destination = outgoingObject.pubKey;
+          const {
+            pubKey: destination,
+            ttl,
+            isFriendRequest,
+            isSessionRequest,
+          } = outgoingObject;
           try {
             const socketMessage = await this.wrapInWebsocketMessage(
               outgoingObject
@@ -483,12 +511,9 @@ OutgoingMessage.prototype = {
               destination,
               socketMessage,
               this.timestamp,
-              outgoingObject.ttl
+              ttl
             );
-            if (
-              outgoingObject.type ===
-              textsecure.protobuf.Envelope.Type.FRIEND_REQUEST
-            ) {
+            if (!this.isGroup && isFriendRequest && !isSessionRequest) {
               const conversation = ConversationController.get(destination);
               if (conversation) {
                 // Redundant for primary device but marks secondary devices as pending

@@ -131,7 +131,8 @@
     if (deviceMapping.isPrimary === '0') {
       const { primaryDevicePubKey } =
         authorisations.find(
-          authorisation => authorisation.secondaryDevicePubKey === pubKey
+          authorisation =>
+            authorisation && authorisation.secondaryDevicePubKey === pubKey
         ) || {};
       if (primaryDevicePubKey) {
         // do NOT call getprimaryDeviceMapping recursively
@@ -240,6 +241,10 @@
     return secondaryPubKeys.concat(primaryDevicePubKey);
   }
 
+  function getPairedDevicesFor(pubkey) {
+    return window.Signal.Data.getPairedDevicesFor(pubkey);
+  }
+
   window.libloki.storage = {
     getPreKeyBundleForContact,
     saveContactPreKeyBundle,
@@ -250,6 +255,7 @@
     removePairingAuthorisationForSecondaryPubKey,
     getGrantAuthorisationForSecondaryPubKey,
     getAuthorisationForSecondaryPubKey,
+    getPairedDevicesFor,
     getAllDevicePubKeysForPrimaryPubKey,
     getSecondaryDevicesFor,
     getPrimaryDeviceMapping,

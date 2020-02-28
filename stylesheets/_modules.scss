@@ -36,7 +36,6 @@
 }
 
 // Module: Message
-
 .module-message {
   position: relative;
   display: inline-flex;
@@ -470,7 +469,7 @@
   line-height: 16px;
   text-transform: uppercase;
 }
-
+.module-conversation__user,
 .module-message__author {
   color: $color-white;
   font-size: 13px;
@@ -482,7 +481,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-
+.module-conversation__user__profile-name,
 .module-message__author__profile-name {
   font-style: italic;
 }
@@ -520,8 +519,20 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  margin-top: 3px;
+  margin-top: 5px;
   margin-bottom: -3px;
+
+  span {
+    opacity: 0.5;
+    transition: 0.25s;
+
+    &:not(.module-message__metadata__badge--separator):hover {
+      opacity: 1;
+    }
+  }
+  .module-message__metadata__badge--separator {
+    margin-top: -2px;
+  }
 }
 
 // With an image and no caption, this section needs to be on top of the image overlay
@@ -1222,12 +1233,20 @@
   text-align: center;
 }
 
-.module-group-notification__change {
-  margin-top: 10px;
+.module-group-notification__change,
+.module-timer-notification__message {
+  background-color: #212121;
+  width: 90%;
+  max-width: 700px;
+  margin: 10px auto;
+  padding: 5px 20px;
+  border-radius: 4px;
+  word-break: break-word;
 }
 
 .module-group-notification__contact {
-  font-weight: 300;
+  font-family: 'SF Pro Text';
+  font-weight: bold;
 }
 
 // Module: Reset Session Notification
@@ -1421,13 +1440,10 @@
 // Module: Conversation Header
 
 .module-conversation-header {
-  padding-left: 16px;
-  padding-right: 16px;
   display: flex;
   flex-direction: row;
   align-items: center;
 
-  height: $header-height;
   color: $color-gray-90;
 
   background-color: $color-white;
@@ -1451,14 +1467,11 @@
   flex-shrink: 1;
   min-width: 0;
   display: block;
-
   text-align: center;
-  height: 48px;
 }
 
 .module-conversation-header__title-text {
   color: darkgrey;
-  margin-left: 1em;
 }
 
 .module-conversation-header__title-flex {
@@ -1472,6 +1485,7 @@
 }
 
 .module-conversation-header__avatar {
+  cursor: pointer;
   min-width: 28px;
   user-select: none;
 }
@@ -1738,6 +1752,7 @@
 // Module: Document List Item
 
 .module-document-list-item {
+  padding-right: 10px;
   width: 100%;
   height: 72px;
 }
@@ -1997,6 +2012,7 @@
   display: flex;
   flex-direction: row;
   align-items: center;
+  margin-top: 5px;
 }
 
 .module-conversation-list-item__message__text {
@@ -2598,7 +2614,7 @@
 
 .module-typing-animation {
   display: inline-flex;
-  flex-directin: row;
+  flex-direction: row;
   align-items: center;
 
   height: 8px;
@@ -3254,8 +3270,7 @@
 
   display: inline-flex;
   flex-direction: column;
-
-  width: 300px;
+  width: 380px;
   height: 100%;
 }
 

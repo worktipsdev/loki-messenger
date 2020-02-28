@@ -3,7 +3,6 @@
 /* global log, window, textsecure */
 
 const EventEmitter = require('events');
-const nodeFetch = require('node-fetch');
 
 const PER_MIN = 60 * 1000;
 const PER_HR = 60 * PER_MIN;
@@ -54,17 +53,35 @@ class LokiRssAPI extends EventEmitter {
   }
 
   async getFeed() {
-    let response;
-    try {
-      response = await nodeFetch(this.feedUrl);
-    } catch (e) {
-      log.error('fetcherror', e);
+    // deal with file server proxy hardcoding
+    const map = {
+      'https://loki.network/category/messenger-updates/feed/':
+        'loki/v1/rss/messenger',
+      'https://loki.network/feed/': 'loki/v1/rss/loki',
+    };
+    if (map[this.feedUrl] === undefined) {
+      log.warn('LokiRssAPI unsupported rss feed', this.feedUrl);
       return;
     }
-    if (!response) {
+    const result = await window.lokiFileServerAPI._server.serverRequest(
+      map[this.feedUrl]
+    );
+    if (!result) {
+      log.error('LokiRssAPI empty rss proxy response');
       return;
     }
-    const responseXML = await response.text();
+    if (!result.response) {
+      log.error('LokiRssAPI rss proxy error, no response', result);
+      return;
+    }
+    if (!result.response.data) {
+      log.error(
+        'LokiRssAPI rss proxy error, no data, response',
+        result.response
+      );
+      return;
+    }
+    const responseXML = result.response.data;
     let feedDOM = {};
     try {
       feedDOM = await new window.DOMParser().parseFromString(
@@ -72,18 +89,23 @@ class LokiRssAPI extends EventEmitter {
         'text/xml'
       );
     } catch (e) {
-      log.error('xmlerror', e);
+      log.error('LokiRssAPI xml parsing error', e, responseXML);
       return;
     }
     const feedObj = xml2json(feedDOM);
     let receivedAt = new Date().getTime();
 
     if (!feedObj || !feedObj.rss || !feedObj.rss.channel) {
-      log.error('rsserror', feedObj, feedDOM, responseXML);
+      log.error(
+        'LokiRssAPI rss structure error',
+        feedObj,
+        feedDOM,
+        responseXML
+      );
       return;
     }
     if (!feedObj.rss.channel.item) {
-      // no records
+      // no records, not an error
       return;
     }
     if (feedObj.rss.channel.item.constructor !== Array) {

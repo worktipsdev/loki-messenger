@@ -203,6 +203,13 @@
       }
       return conversation.getDisplayName();
     },
+    getLokiNameForNumber(number) {
+      const conversation = ConversationController.get(number);
+      if (!conversation || !conversation.getLokiProfile()) {
+        return number;
+      }
+      return conversation.getLokiProfile().displayName;
+    },
     getDescription() {
       if (this.isGroupUpdate()) {
         const groupUpdate = this.get('group_update');
@@ -224,10 +231,10 @@
           messages.push(i18n('titleIsNow', groupUpdate.name));
         }
         if (groupUpdate.joined && groupUpdate.joined.length) {
-          const names = _.map(
-            groupUpdate.joined,
-            this.getNameForNumber.bind(this)
+          const names = groupUpdate.joined.map(name =>
+            this.getLokiNameForNumber(name)
           );
+
           if (names.length > 1) {
             messages.push(i18n('multipleJoinedTheGroup', names.join(', ')));
           } else {
@@ -398,7 +405,6 @@
         return;
       }
       const conversation = await this.getSourceDeviceConversation();
-
       // If we somehow received an old friend request (e.g. after having restored
       // from seed, we won't be able to accept it, we should initiate our own
       // friend request to reset the session:
@@ -408,7 +414,6 @@
         });
         return;
       }
-
       this.set({ friendStatus: 'accepted' });
       await window.Signal.Data.saveMessage(this.attributes, {
         Message: Whisper.Message,
@@ -696,7 +701,6 @@
         expirationTimestamp,
         selected: this.selected,
         multiSelectMode: conversation && conversation.selectedMessages.size > 0,
-        isP2p: !!this.get('isP2p'),
         isPublic: !!this.get('isPublic'),
         isRss: !!this.get('isRss'),
         senderIsModerator:
@@ -816,7 +820,7 @@
     },
     getPropsForPreview() {
       // Don't generate link previews if user has turned them off
-      if (!storage.get('linkPreviews', false)) {
+      if (!storage.get('link-preview-setting', false)) {
         return null;
       }
 
@@ -1021,15 +1025,19 @@
       } else {
         clipboard.writeText(this.OUR_NUMBER);
       }
-      window.Whisper.events.trigger('showToast', {
-        message: i18n('copiedPublicKey'),
+
+      window.pushToast({
+        title: i18n('copiedPublicKey'),
+        type: 'success',
+        id: 'copiedPublicKey',
       });
     },
 
     banUser() {
-      window.Whisper.events.trigger('showConfirmationDialog', {
+      window.confirmationDialog({
+        title: i18n('banUser'),
         message: i18n('banUserConfirm'),
-        onOk: async () => {
+        resolve: async () => {
           const source = this.get('source');
           const conversation = this.getConversation();
 
@@ -1037,12 +1045,16 @@
           const success = await channelAPI.banUser(source);
 
           if (success) {
-            window.Whisper.events.trigger('showToast', {
-              message: i18n('userBanned'),
+            window.pushToast({
+              title: i18n('userBanned'),
+              type: 'success',
+              id: 'userBanned',
             });
           } else {
-            window.Whisper.events.trigger('showToast', {
-              message: i18n('userBanFailed'),
+            window.pushToast({
+              title: i18n('userBanFailed'),
+              type: 'error',
+              id: 'userBanFailed',
             });
           }
         },
@@ -1074,8 +1086,11 @@
 
     copyText() {
       clipboard.writeText(this.get('body'));
-      window.Whisper.events.trigger('showToast', {
-        message: i18n('copiedMessage'),
+
+      window.pushToast({
+        title: i18n('copiedMessage'),
+        type: 'success',
+        id: 'copiedMessage',
       });
     },
 
@@ -1345,19 +1360,6 @@
 
       this.set({
         calculatingPoW: true,
-      });
-
-      await window.Signal.Data.saveMessage(this.attributes, {
-        Message: Whisper.Message,
-      });
-    },
-    async setIsP2p(isP2p) {
-      if (_.isEqual(this.get('isP2p'), isP2p)) {
-        return;
-      }
-
-      this.set({
-        isP2p: !!isP2p,
       });
 
       await window.Signal.Data.saveMessage(this.attributes, {
@@ -1896,7 +1898,10 @@
       const authorisation = await libloki.storage.getGrantAuthorisationForSecondaryPubKey(
         source
       );
-      if (initialMessage.group) {
+      const primarySource =
+        (authorisation && authorisation.primaryDevicePubKey) || source;
+      const isGroupMessage = !!initialMessage.group;
+      if (isGroupMessage) {
         conversationId = initialMessage.group.id;
       } else if (source !== ourNumber && authorisation) {
         // Ignore auth from our devices
@@ -1913,90 +1918,106 @@
       const knownMembers = conversation.get('members');
 
       if (!newGroup && knownMembers) {
-        const fromMember = knownMembers.includes(source);
+        const fromMember = knownMembers.includes(primarySource);
 
         if (!fromMember) {
-          window.log.warn(`Ignoring group message from non-member: ${source}`);
+          window.log.warn(
+            `Ignoring group message from non-member: ${primarySource}`
+          );
           confirm();
           return null;
         }
       }
 
-      if (
-        initialMessage.group &&
-        initialMessage.group.members &&
-        initialMessage.group.type === GROUP_TYPES.UPDATE
-      ) {
-        if (newGroup) {
-          conversation.updateGroupAdmins(initialMessage.group.admins);
+      if (initialMessage.group) {
+        if (
+          initialMessage.group.type === GROUP_TYPES.REQUEST_INFO &&
+          !newGroup
+        ) {
+          conversation.sendGroupInfo([source]);
+          return null;
+        } else if (
+          initialMessage.group.members &&
+          initialMessage.group.type === GROUP_TYPES.UPDATE
+        ) {
+          if (newGroup) {
+            conversation.updateGroupAdmins(initialMessage.group.admins);
 
-          conversation.setFriendRequestStatus(
-            window.friends.friendRequestStatusEnum.friends
-          );
-        }
-
-        const fromAdmin = conversation.get('groupAdmins').includes(source);
-
-        if (!fromAdmin) {
-          // Make sure the message is not removing members / renaming the group
-          const nameChanged =
-            conversation.get('name') !== initialMessage.group.name;
-
-          if (nameChanged) {
-            window.log.warn(
-              'Non-admin attempts to change the name of the group'
+            conversation.setFriendRequestStatus(
+              window.friends.friendRequestStatusEnum.friends
             );
+          } else {
+            const fromAdmin = conversation
+              .get('groupAdmins')
+              .includes(primarySource);
+
+            if (!fromAdmin) {
+              // Make sure the message is not removing members / renaming the group
+              const nameChanged =
+                conversation.get('name') !== initialMessage.group.name;
+
+              if (nameChanged) {
+                window.log.warn(
+                  'Non-admin attempts to change the name of the group'
+                );
+              }
+
+              const membersMissing =
+                _.difference(
+                  conversation.get('members'),
+                  initialMessage.group.members
+                ).length > 0;
+
+              if (membersMissing) {
+                window.log.warn('Non-admin attempts to remove group members');
+              }
+
+              const messageAllowed = !nameChanged && !membersMissing;
+
+              if (!messageAllowed) {
+                confirm();
+                return null;
+              }
+            }
           }
+          // For every member, see if we need to establish a session:
+          initialMessage.group.members.forEach(memberPubKey => {
+            const haveSession = _.some(
+              textsecure.storage.protocol.sessions,
+              s => s.number === memberPubKey
+            );
 
-          const membersMissing =
-            _.difference(
-              conversation.get('members'),
-              initialMessage.group.members
-            ).length > 0;
-
-          if (membersMissing) {
-            window.log.warn('Non-admin attempts to remove group members');
-          }
-
-          const messageAllowed = !nameChanged && !membersMissing;
-
-          if (!messageAllowed) {
-            confirm();
-            return null;
-          }
-        }
-        // For every member, see if we need to establish a session:
-        initialMessage.group.members.forEach(memberPubKey => {
-          const haveSession = _.some(
-            textsecure.storage.protocol.sessions,
-            s => s.number === memberPubKey
-          );
-
-          const ourPubKey = textsecure.storage.user.getNumber();
-          if (!haveSession && memberPubKey !== ourPubKey) {
-            ConversationController.getOrCreateAndWait(
-              memberPubKey,
-              'private'
-            ).then(() => {
-              textsecure.messaging.sendMessageToNumber(
+            const ourPubKey = textsecure.storage.user.getNumber();
+            if (!haveSession && memberPubKey !== ourPubKey) {
+              ConversationController.getOrCreateAndWait(
                 memberPubKey,
-                '(If you see this message, you must be using an out-of-date client)',
-                [],
-                undefined,
-                [],
-                Date.now(),
-                undefined,
-                undefined,
-                { messageType: 'friend-request', backgroundFriendReq: true }
-              );
-            });
-          }
-        });
+                'private'
+              ).then(() => {
+                textsecure.messaging.sendMessageToNumber(
+                  memberPubKey,
+                  '(If you see this message, you must be using an out-of-date client)',
+                  [],
+                  undefined,
+                  [],
+                  Date.now(),
+                  undefined,
+                  undefined,
+                  { messageType: 'friend-request', sessionRequest: true }
+                );
+              });
+            }
+          });
+        } else if (newGroup) {
+          // We have an unknown group, we should request info from the sender
+          textsecure.messaging.requestGroupInfo(conversationId, [
+            primarySource,
+          ]);
+        }
       }
 
-      const backgroundFrReq =
+      const isSessionRequest =
         initialMessage.flags ===
-        textsecure.protobuf.DataMessage.Flags.BACKGROUND_FRIEND_REQUEST;
+        textsecure.protobuf.DataMessage.Flags.SESSION_REQUEST;
 
       if (
         // eslint-disable-next-line no-bitwise
@@ -2007,17 +2028,17 @@
         this.set({ endSessionType: 'ongoing' });
       }
 
-      if (message.isFriendRequest() && backgroundFrReq) {
+      if (message.isFriendRequest() && isSessionRequest) {
         // Check if the contact is a member in one of our private groups:
         const groupMember = window
           .getConversations()
           .models.filter(c => c.get('members'))
           .reduce((acc, x) => window.Lodash.concat(acc, x.get('members')), [])
-          .includes(source);
+          .includes(primarySource);
 
         if (groupMember) {
           window.log.info(
-            `Auto accepting a 'group' friend request for a known group member: ${groupMember}`
+            `Auto accepting a 'group' friend request for a known group member: ${primarySource}`
           );
 
           window.libloki.api.sendBackgroundMessage(message.get('source'));
@@ -2313,40 +2334,51 @@
           }
 
           let autoAccept = false;
-          if (message.get('type') === 'friend-request') {
-            /*
-            Here is the before and after state diagram for the operation before.
+          // Make sure friend request logic doesn't trigger on messages aimed at groups
+          if (!isGroupMessage) {
+            if (message.get('type') === 'friend-request') {
+              /*
+              Here is the before and after state diagram for the operation before.
 
-            None -> RequestReceived
-            PendingSend -> RequestReceived
-            RequestReceived -> RequestReceived
-            Sent -> Friends
-            Expired -> Friends
-            Friends -> Friends
+              None -> RequestReceived
+              PendingSend -> RequestReceived
+              RequestReceived -> RequestReceived
+              Sent -> Friends
+              Expired -> Friends
+              Friends -> Friends
 
-            The cases where we auto accept are the following:
-              - We sent the user a friend request and that user sent us a friend request.
-              - We are friends with the user, and that user just sent us a friend request.
-            */
-            const isFriend = sendingDeviceConversation.isFriend();
-            const hasSentFriendRequest = sendingDeviceConversation.hasSentFriendRequest();
-            autoAccept = isFriend || hasSentFriendRequest;
+              The cases where we auto accept are the following:
+                - We sent the user a friend request,
+                  and that user sent us a friend request.
+                - We are friends with the user,
+                  and that user just sent us a friend request.
+              */
+              const isFriend = sendingDeviceConversation.isFriend();
+              const hasSentFriendRequest = sendingDeviceConversation.hasSentFriendRequest();
+              autoAccept = isFriend || hasSentFriendRequest;
 
-            if (autoAccept) {
-              message.set({ friendStatus: 'accepted' });
-            }
+              if (autoAccept) {
+                message.set({ friendStatus: 'accepted' });
+              }
 
-            if (isFriend) {
-              window.Whisper.events.trigger('endSession', source);
-            } else if (hasSentFriendRequest) {
+              if (isFriend) {
+                window.Whisper.events.trigger('endSession', source);
+              } else if (hasSentFriendRequest) {
+                await sendingDeviceConversation.onFriendRequestAccepted();
+              } else {
+                await sendingDeviceConversation.onFriendRequestReceived();
+              }
+            } else if (message.get('type') !== 'outgoing') {
+              // Ignore 'outgoing' messages because they are sync messages
               await sendingDeviceConversation.onFriendRequestAccepted();
-            } else {
-              await sendingDeviceConversation.onFriendRequestReceived();
             }
-          } else if (message.get('type') !== 'outgoing') {
-            // Ignore 'outgoing' messages because they are sync messages
-            await sendingDeviceConversation.onFriendRequestAccepted();
           }
+
+          // We need to map the original message source to the primary device
+          if (source !== ourNumber) {
+            message.set({ source: primarySource });
+          }
+
           const id = await window.Signal.Data.saveMessage(message.attributes, {
             Message: Whisper.Message,
           });
@@ -2514,11 +2546,11 @@
   Whisper.MessageCollection = Backbone.Collection.extend({
     model: Whisper.Message,
     comparator(left, right) {
-      if (left.get('received_at') === right.get('received_at')) {
-        return (left.get('sent_at') || 0) - (right.get('sent_at') || 0);
+      if (left.get('sent_at') === right.get('sent_at')) {
+        return (left.get('received_at') || 0) - (right.get('received_at') || 0);
       }
 
-      return (left.get('received_at') || 0) - (right.get('received_at') || 0);
+      return (left.get('sent_at') || 0) - (right.get('sent_at') || 0);
     },
     initialize(models, options) {
       if (options) {

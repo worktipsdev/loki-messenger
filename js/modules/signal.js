@@ -19,6 +19,9 @@ const AttachmentDownloads = require('./attachment_downloads');
 
 // Components
 const {
+  ConversationLoadingScreen,
+} = require('../../ts/components/ConversationLoadingScreen');
+const {
   AttachmentList,
 } = require('../../ts/components/conversation/AttachmentList');
 const { CaptionEditor } = require('../../ts/components/CaptionEditor');
@@ -31,6 +34,9 @@ const {
   ConversationHeader,
 } = require('../../ts/components/conversation/ConversationHeader');
 const {
+  SessionGroupSettings,
+} = require('../../ts/components/session/SessionGroupSettings');
+const {
   EmbeddedContact,
 } = require('../../ts/components/conversation/EmbeddedContact');
 const { Emojify } = require('../../ts/components/conversation/Emojify');
@@ -42,7 +48,6 @@ const {
 } = require('../../ts/components/conversation/GroupNotification');
 const { Lightbox } = require('../../ts/components/Lightbox');
 const { LightboxGallery } = require('../../ts/components/LightboxGallery');
-const { MainHeader } = require('../../ts/components/MainHeader');
 const { MemberList } = require('../../ts/components/conversation/MemberList');
 const { BulkEdit } = require('../../ts/components/conversation/BulkEdit');
 const {
@@ -50,10 +55,49 @@ const {
 } = require('../../ts/components/conversation/CreateGroupDialog');
 const { EditProfileDialog } = require('../../ts/components/EditProfileDialog');
 const { UserDetailsDialog } = require('../../ts/components/UserDetailsDialog');
+const {
+  DevicePairingDialog,
+} = require('../../ts/components/DevicePairingDialog');
+const {
+  SettingsView,
+} = require('../../ts/components/session/settings/SessionSettings');
+const { SessionToast } = require('../../ts/components/session/SessionToast');
+const { SessionToggle } = require('../../ts/components/session/SessionToggle');
+const { SessionModal } = require('../../ts/components/session/SessionModal');
+const {
+  SessionQRModal,
+} = require('../../ts/components/session/SessionQRModal');
+const {
+  SessionSeedModal,
+} = require('../../ts/components/session/SessionSeedModal');
 
 const {
-  UpdateGroupDialog,
-} = require('../../ts/components/conversation/UpdateGroupDialog');
+  SessionPasswordModal,
+} = require('../../ts/components/session/SessionPasswordModal');
+const {
+  SessionPasswordPrompt,
+} = require('../../ts/components/session/SessionPasswordPrompt');
+
+const {
+  SessionConfirm,
+} = require('../../ts/components/session/SessionConfirm');
+
+const {
+  SessionDropdown,
+} = require('../../ts/components/session/SessionDropdown');
+const {
+  SessionScrollButton,
+} = require('../../ts/components/session/SessionScrollButton');
+const {
+  SessionRegistrationView,
+} = require('../../ts/components/session/SessionRegistrationView');
+
+const {
+  UpdateGroupNameDialog,
+} = require('../../ts/components/conversation/UpdateGroupNameDialog');
+const {
+  UpdateGroupMembersDialog,
+} = require('../../ts/components/conversation/UpdateGroupMembersDialog');
 const {
   InviteFriendsDialog,
 } = require('../../ts/components/conversation/InviteFriendsDialog');
@@ -230,30 +274,45 @@ exports.setup = (options = {}) => {
   });
 
   const Components = {
+    ConversationLoadingScreen,
     AttachmentList,
     CaptionEditor,
     ContactDetail,
     ContactListItem,
     ContactName,
     ConversationHeader,
+    SessionGroupSettings,
+    SettingsView,
     EmbeddedContact,
     Emojify,
     FriendRequest,
     GroupNotification,
     Lightbox,
     LightboxGallery,
-    MainHeader,
     MemberList,
     CreateGroupDialog,
     EditProfileDialog,
     UserDetailsDialog,
+    DevicePairingDialog,
+    SessionRegistrationView,
     ConfirmDialog,
-    UpdateGroupDialog,
+    UpdateGroupNameDialog,
+    UpdateGroupMembersDialog,
     InviteFriendsDialog,
     AddModeratorsDialog,
     RemoveModeratorsDialog,
     GroupInvitation,
     BulkEdit,
+    SessionToast,
+    SessionToggle,
+    SessionConfirm,
+    SessionModal,
+    SessionQRModal,
+    SessionSeedModal,
+    SessionPasswordModal,
+    SessionPasswordPrompt,
+    SessionDropdown,
+    SessionScrollButton,
     MediaGallery,
     Message,
     MessageBody,

@@ -1,4 +1,5 @@
 /* global
+  $,
   _,
   log,
   i18n,
@@ -11,7 +12,6 @@
   profileImages,
   clipboard,
   BlockedNumberController,
-  lokiP2pAPI,
   lokiPublicChatAPI,
   JobQueue
 */
@@ -181,13 +181,6 @@
 
       if (this.id === this.ourNumber) {
         this.set({ friendRequestStatus: FriendRequestStatusEnum.friends });
-      } else if (typeof lokiP2pAPI !== 'undefined') {
-        // Online status handling, only for contacts that aren't us
-        this.set({ isOnline: lokiP2pAPI.isOnline(this.id) });
-      } else {
-        window.log.warn(
-          'lokiP2pAPI not initialised when spawning conversation!'
-        );
       }
 
       this.messageSendQueue = new JobQueue();
@@ -205,12 +198,32 @@
     isOnline() {
       return this.isMe() || this.get('isOnline');
     },
-
     isMe() {
+      return this.isOurLocalDevice() || this.isOurPrimaryDevice();
+    },
+    isOurPrimaryDevice() {
       return this.id === window.storage.get('primaryDevicePubKey');
+    },
+    async isOurDevice() {
+      if (this.isMe()) {
+        return true;
+      }
+
+      const ourDevices = await window.libloki.storage.getPairedDevicesFor(
+        this.ourNumber
+      );
+      return ourDevices.includes(this.id);
+    },
+    isOurLocalDevice() {
+      return this.id === this.ourNumber;
     },
     isPublic() {
       return !!(this.id && this.id.match(/^publicChat:/));
+    },
+    isClosedGroup() {
+      return (
+        this.get('type') === Message.GROUP && !this.isPublic() && !this.isRss()
+      );
     },
     isClosable() {
       return !this.isRss() || this.get('closable');
@@ -231,6 +244,60 @@
       this.trigger('change');
       this.messageCollection.forEach(m => m.trigger('change'));
     },
+    async acceptFriendRequest() {
+      const messages = await window.Signal.Data.getMessagesByConversation(
+        this.id,
+        { limit: 1, MessageCollection: Whisper.MessageCollection }
+      );
+
+      const lastMessageModel = messages.at(0);
+      if (lastMessageModel) {
+        lastMessageModel.acceptFriendRequest();
+        await this.markRead();
+        window.Whisper.events.trigger(
+          'showConversation',
+          this.id,
+          lastMessageModel.id
+        );
+      }
+    },
+    async declineFriendRequest() {
+      const messages = await window.Signal.Data.getMessagesByConversation(
+        this.id,
+        { limit: 1, MessageCollection: Whisper.MessageCollection }
+      );
+
+      const lastMessageModel = messages.at(0);
+      if (lastMessageModel) {
+        lastMessageModel.declineFriendRequest();
+      }
+    },
+    setMessageSelectionBackdrop() {
+      const messageSelected = this.selectedMessages.size > 0;
+
+      if (messageSelected) {
+        // Hide ellipses icon
+        $('.title-wrapper .session-icon.ellipses').css({ opacity: 0 });
+
+        $('.messages li, .messages > div').addClass('shadowed');
+        $('.message-selection-overlay').addClass('overlay');
+        $('.module-conversation-header').addClass('overlayed');
+
+        let messageId;
+        // eslint-disable-next-line no-restricted-syntax
+        for (const item of this.selectedMessages) {
+          messageId = item.propsForMessage.id;
+          $(`#${messageId}`).removeClass('shadowed');
+        }
+      } else {
+        // Hide ellipses icon
+        $('.title-wrapper .session-icon.ellipses').css({ opacity: 1 });
+
+        $('.messages li, .messages > div').removeClass('shadowed');
+        $('.message-selection-overlay').removeClass('overlay');
+        $('.module-conversation-header').removeClass('overlayed');
+      }
+    },
 
     addMessageSelection(id) {
       // If the selection is empty, then we chage the mode to
@@ -243,6 +310,7 @@
       }
 
       this.trigger('message-selection-changed');
+      this.setMessageSelectionBackdrop();
     },
 
     removeMessageSelection(id) {
@@ -256,6 +324,7 @@
       }
 
       this.trigger('message-selection-changed');
+      this.setMessageSelectionBackdrop();
     },
 
     resetMessageSelection() {
@@ -267,6 +336,7 @@
       });
 
       this.trigger('message-selection-changed');
+      this.setMessageSelectionBackdrop();
     },
 
     async bumpTyping() {
@@ -332,6 +402,11 @@
     },
 
     sendTypingMessage(isTyping) {
+      // Loki - Temporarily disable typing messages for groups
+      if (!this.isPrivate()) {
+        return;
+      }
+
       const groupId = !this.isPrivate() ? this.id : null;
       const recipientId = this.isPrivate() ? this.id : null;
       const groupNumbers = this.getRecipients();
@@ -432,11 +507,6 @@
       await Promise.all(messages.map(m => m.setCalculatingPoW()));
     },
 
-    async onP2pMessageSent(pubKey, timestamp) {
-      const messages = this._getMessagesWithTimestamp(pubKey, timestamp);
-      await Promise.all(messages.map(m => m.setIsP2p(true)));
-    },
-
     async onPublicMessageSent(pubKey, timestamp, serverId) {
       const messages = this._getMessagesWithTimestamp(pubKey, timestamp);
       await Promise.all(
@@ -511,6 +581,7 @@
         type: this.isPrivate() ? 'direct' : 'group',
         isMe: this.isMe(),
         isPublic: this.isPublic(),
+        isRss: this.isRss(),
         isClosable: this.isClosable(),
         isTyping: typingKeys.length > 0,
         lastUpdated: this.get('timestamp'),
@@ -520,10 +591,11 @@
         title: this.getTitle(),
         unreadCount: this.get('unreadCount') || 0,
         mentionedUs: this.get('mentionedUs') || false,
-        showFriendRequestIndicator: this.isPendingFriendRequest(),
+        isPendingFriendRequest: this.isPendingFriendRequest(),
+        hasReceivedFriendRequest: this.hasReceivedFriendRequest(),
+        hasSentFriendRequest: this.hasSentFriendRequest(),
         isBlocked: this.isBlocked(),
         isSecondary: !!this.get('secondaryStatus'),
-
         phoneNumber: format(this.id, {
           ourRegionCode: regionCode,
         }),
@@ -546,6 +618,9 @@
         onCopyPublicKey: () => this.copyPublicKey(),
         onDeleteContact: () => this.deleteContact(),
         onDeleteMessages: () => this.deleteMessages(),
+        onCloseOverlay: () => this.resetMessageSelection(),
+        acceptFriendRequest: () => this.acceptFriendRequest(),
+        declineFriendRequest: () => this.declineFriendRequest(),
       };
 
       this.updateAsyncPropsCache();
@@ -860,7 +935,7 @@
         if (newStatus === FriendRequestStatusEnum.friends) {
           if (!blockSync) {
             // Sync contact
-            this.wrapSend(textsecure.messaging.sendContactSyncMessage(this));
+            this.wrapSend(textsecure.messaging.sendContactSyncMessage([this]));
           }
           // Only enable sending profileKey after becoming friends
           this.set({ profileSharing: true });
@@ -929,6 +1004,12 @@
         direction: 'incoming',
       });
       await window.libloki.storage.removeContactPreKeyBundle(this.id);
+      await this.destroyMessages();
+      window.pushToast({
+        title: i18n('friendRequestDeclined'),
+        type: 'success',
+        id: 'declineFriendRequest',
+      });
     },
     // We have accepted an incoming friend request
     async onAcceptFriendRequest(options = {}) {
@@ -937,6 +1018,7 @@
       }
       if (this.hasReceivedFriendRequest()) {
         this.setFriendRequestStatus(FriendRequestStatusEnum.friends, options);
+
         await this.respondToAllFriendRequests({
           response: 'accepted',
           direction: 'incoming',
@@ -1462,11 +1544,14 @@
           now
         );
 
+        const conversationType = this.get('type');
+
         let messageWithSchema = null;
 
         // If we are a friend with any of the devices, send the message normally
         const canSendNormalMessage = await this.isFriendWithAnyDevice();
-        if (canSendNormalMessage) {
+        const isGroup = conversationType === Message.GROUP;
+        if (canSendNormalMessage || isGroup) {
           messageWithSchema = await upgradeMessageSchema({
             type: 'outgoing',
             body,
@@ -1611,8 +1696,6 @@
           );
           return message.sendSyncMessageOnly(dataMessage);
         }
-
-        const conversationType = this.get('type');
 
         const options = this.getSendOptions();
         options.messageType = message.get('type');
@@ -2149,11 +2232,27 @@
             this.get('name'),
             this.get('avatar'),
             this.get('members'),
+            this.get('groupAdmins'),
             groupUpdate.recipients,
             options
           )
         )
       );
+    },
+
+    sendGroupInfo(recipients) {
+      if (this.isClosedGroup()) {
+        const options = this.getSendOptions();
+        textsecure.messaging.updateGroup(
+          this.id,
+          this.get('name'),
+          this.get('avatar'),
+          this.get('members'),
+          this.get('groupAdmins'),
+          recipients,
+          options
+        );
+      }
     },
 
     async leaveGroup() {
@@ -2240,6 +2339,7 @@
         const ourNumber = textsecure.storage.user.getNumber();
         return !stillUnread.some(
           m =>
+            m.propsForMessage &&
             m.propsForMessage.text &&
             m.propsForMessage.text.indexOf(`@${ourNumber}`) !== -1
         );
@@ -2265,7 +2365,7 @@
         return;
       }
 
-      if (!this.isPublic() && read.length && options.sendReadReceipts) {
+      if (this.isPrivate() && read.length && options.sendReadReceipts) {
         window.log.info(`Sending ${read.length} read receipts`);
         // Because syncReadMessages sends to our other devices, and sendReadReceipts goes
         //   to a contact, we need accessKeys for both.
@@ -2477,6 +2577,10 @@
         });
       }
     },
+    async setSubscriberCount(count) {
+      this.set({ subscriberCount: count });
+      // Not sure if we care about updating the database
+    },
     async setGroupNameAndAvatar(name, avatarPath) {
       const currentName = this.get('name');
       const profileAvatar = this.get('profileAvatar');
@@ -2623,8 +2727,16 @@
 
     copyPublicKey() {
       clipboard.writeText(this.id);
-      window.Whisper.events.trigger('showToast', {
-        message: i18n('copiedPublicKey'),
+
+      const isGroup = this.getProps().type === 'group';
+      const copiedMessage = isGroup
+        ? i18n('copiedChatId')
+        : i18n('copiedPublicKey');
+
+      window.pushToast({
+        title: copiedMessage,
+        type: 'success',
+        id: 'copiedPublicKey',
       });
     },
 
@@ -2637,13 +2749,21 @@
     },
 
     deleteContact() {
-      const message = this.isPublic()
-        ? i18n('deletePublicChannelConfirmation')
-        : i18n('deleteContactConfirmation');
+      let title = i18n('deleteContact');
+      let message = i18n('deleteContactConfirmation');
 
-      Whisper.events.trigger('showConfirmationDialog', {
+      if (this.isPublic()) {
+        title = i18n('deletePublicChannel');
+        message = i18n('deletePublicChannelConfirmation');
+      } else if (this.isClosedGroup()) {
+        title = i18n('leaveClosedGroup');
+        message = i18n('leaveClosedGroupConfirmation');
+      }
+
+      window.confirmationDialog({
+        title,
         message,
-        onOk: () => ConversationController.deleteContact(this.id),
+        resolve: () => ConversationController.deleteContact(this.id),
       });
     },
 
@@ -2693,17 +2813,23 @@
 
     deleteMessages() {
       this.resetMessageSelection();
+
+      let params;
       if (this.isPublic()) {
-        Whisper.events.trigger('showConfirmationDialog', {
+        params = {
+          title: i18n('deleteMessages'),
           message: i18n('deletePublicConversationConfirmation'),
-          onOk: () => ConversationController.deleteContact(this.id),
-        });
+          resolve: () => ConversationController.deleteContact(this.id),
+        };
       } else {
-        Whisper.events.trigger('showConfirmationDialog', {
+        params = {
+          title: i18n('deleteMessages'),
           message: i18n('deleteConversationConfirmation'),
-          onOk: () => this.destroyMessages(),
-        });
+          resolve: () => this.destroyMessages(),
+        };
       }
+
+      window.confirmationDialog(params);
     },
 
     async destroyMessages() {
@@ -2713,11 +2839,19 @@
 
       this.messageCollection.reset([]);
 
-      this.set({
-        lastMessage: null,
-        timestamp: null,
-        active_at: null,
-      });
+      // let's try to keep the RSS conversation open just empty...
+      if (this.isRss()) {
+        this.set({
+          lastMessage: null,
+        });
+      } else {
+        // this will remove the conversation from conversation lists...
+        this.set({
+          lastMessage: null,
+          timestamp: null,
+          active_at: null,
+        });
+      }
 
       // Reset our friend status if we're not friends
       if (!this.isFriend()) {

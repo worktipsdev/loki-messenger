@@ -1,4 +1,4 @@
-/* global window, textsecure, log, Whisper, dcodeIO, StringView, ConversationController */
+/* global window, textsecure, dcodeIO, StringView, ConversationController */
 
 // eslint-disable-next-line func-names
 (function() {
@@ -6,24 +6,6 @@
 
   async function sendBackgroundMessage(pubKey) {
     return sendOnlineBroadcastMessage(pubKey);
-  }
-
-  async function broadcastOnlineStatus() {
-    const friendKeys = await window.Signal.Data.getPubKeysWithFriendStatus(
-      window.friends.friendRequestStatusEnum.friends
-    );
-    await Promise.all(
-      friendKeys.map(async pubKey => {
-        if (pubKey === textsecure.storage.user.getNumber()) {
-          return;
-        }
-        try {
-          await sendOnlineBroadcastMessage(pubKey);
-        } catch (e) {
-          log.warn(`Failed to send online broadcast message to ${pubKey}`);
-        }
-      })
-    );
   }
 
   async function sendOnlineBroadcastMessage(pubKey, isPing = false) {
@@ -34,27 +16,10 @@
       sendOnlineBroadcastMessage(authorisation.primaryDevicePubKey);
       return;
     }
-    let p2pAddress = null;
-    let p2pPort = null;
-    let type;
-
-    let myIp;
-    if (window.localLokiServer && window.localLokiServer.isListening()) {
-      try {
-        // clearnet change: getMyLokiAddress -> getMyClearIP
-        // const myLokiAddress = await window.lokiSnodeAPI.getMyLokiAddress();
-        myIp = await window.lokiSnodeAPI.getMyClearIp();
-      } catch (e) {
-        log.warn(`Failed to get clear IP for local server ${e}`);
-      }
-    }
-    if (myIp) {
-      p2pAddress = `https://${myIp}`;
-      p2pPort = window.localLokiServer.getPublicPort();
-      type = textsecure.protobuf.LokiAddressMessage.Type.HOST_REACHABLE;
-    } else {
-      type = textsecure.protobuf.LokiAddressMessage.Type.HOST_UNREACHABLE;
-    }
+    const p2pAddress = null;
+    const p2pPort = null;
+    // We result loki address message for sending "background" messages
+    const type = textsecure.protobuf.LokiAddressMessage.Type.HOST_UNREACHABLE;
 
     const lokiAddressMessage = new textsecure.protobuf.LokiAddressMessage({
       p2pAddress,
@@ -144,8 +109,16 @@
   }
   async function createContactSyncProtoMessage(conversations) {
     // Extract required contacts information out of conversations
+    const sessionContacts = conversations.filter(
+      c => c.isPrivate() && !c.isSecondaryDevice()
+    );
+
+    if (sessionContacts.length === 0) {
+      return null;
+    }
+
     const rawContacts = await Promise.all(
-      conversations.map(async conversation => {
+      sessionContacts.map(async conversation => {
         const profile = conversation.getLokiProfile();
         const number = conversation.getNumber();
         const name = profile
@@ -186,6 +159,63 @@
     });
     return syncMessage;
   }
+  function createGroupSyncProtoMessage(conversations) {
+    // We only want to sync across closed groups that we haven't left
+    const sessionGroups = conversations.filter(
+      c => c.isClosedGroup() && !c.get('left') && c.isFriend()
+    );
+
+    if (sessionGroups.length === 0) {
+      return null;
+    }
+
+    const rawGroups = sessionGroups.map(conversation => ({
+      id: window.Signal.Crypto.bytesFromString(conversation.id),
+      name: conversation.get('name'),
+      members: conversation.get('members') || [],
+      blocked: conversation.isBlocked(),
+      expireTimer: conversation.get('expireTimer'),
+      admins: conversation.get('groupAdmins') || [],
+    }));
+
+    // Convert raw groups to an array of buffers
+    const groupDetails = rawGroups
+      .map(x => new textsecure.protobuf.GroupDetails(x))
+      .map(x => x.encode());
+    // Serialise array of byteBuffers into 1 byteBuffer
+    const byteBuffer = serialiseByteBuffers(groupDetails);
+    const data = new Uint8Array(byteBuffer.toArrayBuffer());
+    const groups = new textsecure.protobuf.SyncMessage.Groups({
+      data,
+    });
+    const syncMessage = new textsecure.protobuf.SyncMessage({
+      groups,
+    });
+    return syncMessage;
+  }
+  function createOpenGroupsSyncProtoMessage(conversations) {
+    // We only want to sync across open groups that we haven't left
+    const sessionOpenGroups = conversations.filter(
+      c => c.isPublic() && !c.isRss() && !c.get('left')
+    );
+
+    if (sessionOpenGroups.length === 0) {
+      return null;
+    }
+
+    const openGroups = sessionOpenGroups.map(
+      conversation =>
+        new textsecure.protobuf.SyncMessage.OpenGroupDetails({
+          url: conversation.id.split('@').pop(),
+          channelId: conversation.get('channelId'),
+        })
+    );
+
+    const syncMessage = new textsecure.protobuf.SyncMessage({
+      openGroups,
+    });
+    return syncMessage;
+  }
   async function sendPairingAuthorisation(authorisation, recipientPubKey) {
     const pairingAuthorisation = createPairingAuthorisationProtoMessage(
       authorisation
@@ -214,21 +244,16 @@
         profile,
         profileKey,
       });
-      // Attach contact list
-      const conversations = await window.Signal.Data.getConversationsWithFriendStatus(
-        window.friends.friendRequestStatusEnum.friends,
-        { ConversationCollection: Whisper.ConversationCollection }
-      );
-      const syncMessage = await createContactSyncProtoMessage(conversations);
-      content.syncMessage = syncMessage;
       content.dataMessage = dataMessage;
     }
     // Send
     const options = { messageType: 'pairing-request' };
     const p = new Promise((resolve, reject) => {
+      const timestamp = Date.now();
+
       const outgoingMessage = new textsecure.OutgoingMessage(
         null, // server
-        Date.now(), // timestamp,
+        timestamp,
         [recipientPubKey], // numbers
         content, // message
         true, // silent
@@ -250,10 +275,11 @@
   window.libloki.api = {
     sendBackgroundMessage,
     sendOnlineBroadcastMessage,
-    broadcastOnlineStatus,
     sendPairingAuthorisation,
     createPairingAuthorisationProtoMessage,
     sendUnpairingMessageToSecondary,
     createContactSyncProtoMessage,
+    createGroupSyncProtoMessage,
+    createOpenGroupsSyncProtoMessage,
   };
 })();

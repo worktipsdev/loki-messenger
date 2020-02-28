@@ -94,8 +94,10 @@
 
 .friend-selection-list {
   max-height: 240px;
-  overflow-y: scroll;
+  overflow-y: auto;
   margin: 4px;
+  border-top: 1px solid #2f2f2f;
+  border-bottom: 1px solid #2f2f2f;
 
   .check-mark {
     float: right;
@@ -147,28 +149,19 @@
     padding: 4px;
     user-select: none;
 
-    &:hover:not(.member-selected) {
-      background-color: $color-light-20;
-    }
-
-    background-color: $color-light-10;
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
 
     .name-part {
       font-weight: 300;
-      margin-left: 6px;
+      margin-left: 12px;
     }
 
     .pubkey-part {
-      margin-left: 6px;
-      color: darkslategrey;
+      margin-left: 10px;
+      opacity: 0.6;
     }
-  }
-
-  .member-selected {
-    background-color: $color-light-35;
   }
 }
 
@@ -190,38 +183,6 @@
 .message-highlighted {
   border-radius: $message-container-border-radius;
   background-color: rgba(255, 197, 50, 0.2);
-}
-
-.dark-theme {
-  .member-list-container,
-  .create-group-dialog,
-  .add-moderators-dialog,
-  .remove-moderators-dialog,
-  .invite-friends-dialog {
-    .member-item {
-      &:hover:not(.member-selected) {
-        background-color: $color-dark-55;
-      }
-
-      background-color: $color-dark-70;
-
-      color: white;
-
-      .pubkey-part {
-        color: rgb(230, 230, 230);
-      }
-    }
-
-    .member-selected {
-      background-color: $color-dark-60;
-    }
-  }
-}
-
-.add-moderators-dialog {
-  .module-main-header__search__input {
-    color: rgb(32, 32, 32);
-  }
 }
 
 .module-conversation-list-item--mentioned-us {

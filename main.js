@@ -14,6 +14,7 @@ const packageJson = require('./package.json');
 const GlobalErrors = require('./app/global_errors');
 
 GlobalErrors.addHandler();
+const electronLocalshortcut = require('electron-localshortcut');
 
 const getRealPath = pify(fs.realpath);
 const {
@@ -186,9 +187,9 @@ function captureClicks(window) {
 }
 
 const DEFAULT_WIDTH = 800;
-const DEFAULT_HEIGHT = 710;
-const MIN_WIDTH = 640;
-const MIN_HEIGHT = 360;
+const DEFAULT_HEIGHT = 720;
+const MIN_WIDTH = 880;
+const MIN_HEIGHT = 580;
 const BOUNDS_BUFFER = 100;
 
 function isVisible(window, bounds) {
@@ -226,6 +227,7 @@ function createWindow() {
       minWidth: MIN_WIDTH,
       minHeight: MIN_HEIGHT,
       autoHideMenuBar: false,
+      backgroundColor: '#fff',
       webPreferences: {
         nodeIntegration: false,
         nodeIntegrationInWorker: false,
@@ -233,7 +235,7 @@ function createWindow() {
         preload: path.join(__dirname, 'preload.js'),
         nativeWindowOpen: true,
       },
-      icon: path.join(__dirname, 'images', 'icon_256.png'),
+      icon: path.join(__dirname, 'images', 'session', 'icon_64.png'),
     },
     _.pick(windowConfig, [
       'maximized',
@@ -282,6 +284,15 @@ function createWindow() {
 
   // Create the browser window.
   mainWindow = new BrowserWindow(windowOptions);
+  // Disable system main menu
+  mainWindow.setMenu(null);
+
+  electronLocalshortcut.register(mainWindow, 'F5', () => {
+    mainWindow.reload();
+  });
+  electronLocalshortcut.register(mainWindow, 'CommandOrControl+R', () => {
+    mainWindow.reload();
+  });
 
   function captureAndSaveWindowStats() {
     if (!mainWindow) {
@@ -418,19 +429,19 @@ ipc.on('ready-for-updates', async () => {
 
 function openReleaseNotes() {
   shell.openExternal(
-    `https://github.com/loki-project/loki-messenger/releases/tag/${app.getVersion()}`
+    `https://github.com/loki-project/session-desktop/releases/tag/v${app.getVersion()}`
   );
 }
 
 function openNewBugForm() {
   shell.openExternal(
-    'https://github.com/loki-project/loki-messenger/issues/new'
+    'https://github.com/loki-project/session-desktop/issues/new'
   );
 }
 
 function openSupportPage() {
   shell.openExternal(
-    'https://loki-project.github.io/loki-docs/LokiServices/Messenger/'
+    'https://docs.loki.network/LokiServices/Messenger/Session/'
   );
 }
 
@@ -739,7 +750,7 @@ app.on('ready', async () => {
   logger.info(`starting version ${packageJson.version}`);
 
   if (!locale) {
-    const appLocale = process.env.NODE_ENV === 'test' ? 'en' : app.getLocale();
+    const appLocale = process.env.NODE_ENV === 'test' ? 'en' : 'en'; // app.getLocale(); // FIXME reenable once we have translated our files
     locale = loadLocale({ appLocale, logger });
   }
 

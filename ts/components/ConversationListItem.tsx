@@ -11,6 +11,7 @@ import { ContactName } from './conversation/ContactName';
 import { TypingAnimation } from './conversation/TypingAnimation';
 
 import { Colors, LocalizerType } from '../types/Util';
+import { SessionButton, SessionButtonColor } from './session/SessionButton';
 
 export type PropsData = {
   id: string;
@@ -22,6 +23,7 @@ export type PropsData = {
   avatarPath?: string;
   isMe: boolean;
   isPublic?: boolean;
+  isRss?: boolean;
   isClosable?: boolean;
 
   lastUpdated: number;
@@ -36,11 +38,13 @@ export type PropsData = {
     isRss: boolean;
   };
 
-  showFriendRequestIndicator?: boolean;
+  isPendingFriendRequest?: boolean;
+  hasReceivedFriendRequest?: boolean;
+  hasSentFriendRequest?: boolean;
   isBlocked?: boolean;
   isOnline?: boolean;
   hasNickname?: boolean;
-  isFriendItem?: boolean;
+  isFriend?: boolean;
   isSecondary?: boolean;
   isGroupInvitation?: boolean;
 };
@@ -56,6 +60,8 @@ type PropsHousekeeping = {
   onClearNickname?: () => void;
   onCopyPublicKey?: () => void;
   onUnblockContact?: () => void;
+  acceptFriendRequest?: () => void;
+  declineFriendRequest?: () => void;
 };
 
 type Props = PropsData & PropsHousekeeping;
@@ -72,9 +78,15 @@ export class ConversationListItem extends React.PureComponent<Props> {
       phoneNumber,
       profileName,
       isOnline,
+      isPendingFriendRequest,
+      hasSentFriendRequest,
     } = this.props;
 
-    const borderColor = isOnline ? Colors.ONLINE : Colors.OFFLINE;
+    let borderColor;
+    if (!(isPendingFriendRequest && !hasSentFriendRequest)) {
+      borderColor = isOnline ? Colors.ONLINE : Colors.OFFLINE;
+    }
+    const iconSize = isPendingFriendRequest && !hasSentFriendRequest ? 28 : 36;
 
     return (
       <div className="module-conversation-list-item__avatar-container">
@@ -87,10 +99,9 @@ export class ConversationListItem extends React.PureComponent<Props> {
           name={name}
           phoneNumber={phoneNumber}
           profileName={profileName}
-          size={48}
+          size={iconSize}
           borderColor={borderColor}
         />
-        {this.renderUnread()}
       </div>
     );
   }
@@ -120,10 +131,8 @@ export class ConversationListItem extends React.PureComponent<Props> {
       i18n,
       isMe,
       lastUpdated,
-      name,
-      phoneNumber,
-      profileName,
-      isFriendItem,
+      isFriend,
+      hasReceivedFriendRequest,
     } = this.props;
 
     return (
@@ -136,18 +145,10 @@ export class ConversationListItem extends React.PureComponent<Props> {
               : null
           )}
         >
-          {isMe ? (
-            i18n('noteToSelf')
-          ) : (
-            <ContactName
-              phoneNumber={phoneNumber}
-              name={name}
-              profileName={profileName}
-              i18n={i18n}
-            />
-          )}
+          {isMe ? i18n('noteToSelf') : this.renderUser()}
         </div>
-        {!isFriendItem && (
+        {hasReceivedFriendRequest || this.renderUnread()}
+        {isFriend && (
           <div
             className={classNames(
               'module-conversation-list-item__header__date',
@@ -156,12 +157,14 @@ export class ConversationListItem extends React.PureComponent<Props> {
                 : null
             )}
           >
-            <Timestamp
-              timestamp={lastUpdated}
-              extended={false}
-              module="module-conversation-list-item__header__timestamp"
-              i18n={i18n}
-            />
+            {!hasReceivedFriendRequest && (
+              <Timestamp
+                timestamp={lastUpdated}
+                extended={false}
+                module="module-conversation-list-item__header__timestamp"
+                i18n={i18n}
+              />
+            )}
           </div>
         )}
       </div>
@@ -174,6 +177,7 @@ export class ConversationListItem extends React.PureComponent<Props> {
       isBlocked,
       isMe,
       isClosable,
+      isRss,
       isPublic,
       hasNickname,
       onDeleteContact,
@@ -190,18 +194,18 @@ export class ConversationListItem extends React.PureComponent<Props> {
 
     return (
       <ContextMenu id={triggerId}>
-        {!isPublic && !isMe ? (
+        {!isPublic && !isRss && !isMe ? (
           <MenuItem onClick={blockHandler}>{blockTitle}</MenuItem>
         ) : null}
-        {!isPublic && !isMe ? (
+        {!isPublic && !isRss && !isMe ? (
           <MenuItem onClick={onChangeNickname}>
             {i18n('changeNickname')}
           </MenuItem>
         ) : null}
-        {!isPublic && !isMe && hasNickname ? (
+        {!isPublic && !isRss && !isMe && hasNickname ? (
           <MenuItem onClick={onClearNickname}>{i18n('clearNickname')}</MenuItem>
         ) : null}
-        {!isPublic ? (
+        {!isPublic && !isRss ? (
           <MenuItem onClick={onCopyPublicKey}>{i18n('copyPublicKey')}</MenuItem>
         ) : null}
         <MenuItem onClick={onDeleteMessages}>{i18n('deleteMessages')}</MenuItem>
@@ -226,12 +230,8 @@ export class ConversationListItem extends React.PureComponent<Props> {
       isTyping,
       unreadCount,
       i18n,
-      isFriendItem,
+      isPendingFriendRequest,
     } = this.props;
-
-    if (isFriendItem) {
-      return null;
-    }
 
     if (!lastMessage && !isTyping) {
       return null;
@@ -242,6 +242,10 @@ export class ConversationListItem extends React.PureComponent<Props> {
     if (lastMessage && lastMessage.isRss) {
       // strip any HTML
       text = text.replace(/<[^>]*>?/gm, '');
+    }
+
+    if (isPendingFriendRequest) {
+      text = text.replace('Friend Request: ', '');
     }
 
     if (isEmpty(text)) {
@@ -283,6 +287,24 @@ export class ConversationListItem extends React.PureComponent<Props> {
     );
   }
 
+  public renderFriendRequestButtons() {
+    const { acceptFriendRequest, declineFriendRequest } = this.props;
+
+    return (
+      <div className="module-conversation-list-item__buttons">
+        <SessionButton
+          text={window.i18n('decline')}
+          buttonColor={SessionButtonColor.None}
+          onClick={declineFriendRequest}
+        />
+        <SessionButton
+          text={window.i18n('accept')}
+          onClick={acceptFriendRequest}
+        />
+      </div>
+    );
+  }
+
   public render() {
     const {
       phoneNumber,
@@ -290,7 +312,7 @@ export class ConversationListItem extends React.PureComponent<Props> {
       onClick,
       id,
       isSelected,
-      showFriendRequestIndicator,
+      hasReceivedFriendRequest,
       isBlocked,
       style,
       mentionedUs,
@@ -318,7 +340,7 @@ export class ConversationListItem extends React.PureComponent<Props> {
                 ? 'module-conversation-list-item--mentioned-us'
                 : null,
               isSelected ? 'module-conversation-list-item--is-selected' : null,
-              showFriendRequestIndicator
+              hasReceivedFriendRequest
                 ? 'module-conversation-list-item--has-friend-request'
                 : null,
               isBlocked ? 'module-conversation-list-item--is-blocked' : null
@@ -329,9 +351,31 @@ export class ConversationListItem extends React.PureComponent<Props> {
               {this.renderHeader()}
               {this.renderMessage()}
             </div>
+            {hasReceivedFriendRequest && this.renderFriendRequestButtons()}
           </div>
         </ContextMenuTrigger>
         <Portal>{this.renderContextMenu(triggerId)}</Portal>
+      </div>
+    );
+  }
+
+  private renderUser() {
+    const { name, phoneNumber, profileName } = this.props;
+
+    const shortenedPubkey = window.shortenPubkey(phoneNumber);
+
+    const displayedPubkey = profileName ? shortenedPubkey : phoneNumber;
+
+    return (
+      <div className="module-conversation__user">
+        <ContactName
+          phoneNumber={displayedPubkey}
+          name={name}
+          profileName={profileName}
+          module="module-conversation__user"
+          i18n={window.i18n}
+          boldProfileName={true}
+        />
       </div>
     );
   }

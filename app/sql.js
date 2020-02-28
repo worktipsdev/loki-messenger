@@ -901,8 +901,8 @@ async function updateToLokiSchemaVersion1(currentVersion, instance) {
     id: 'rss://loki.network/feed/',
     rssFeed: 'https://loki.network/feed/',
     closable: true,
-    name: 'Loki.network News',
-    profileAvatar: 'images/loki/loki_icon.png',
+    name: 'Loki News',
+    profileAvatar: 'images/session/session_chat_icon.png',
   };
 
   const updatesRssFeedData = {
@@ -910,11 +910,16 @@ async function updateToLokiSchemaVersion1(currentVersion, instance) {
     id: 'rss://loki.network/category/messenger-updates/feed/',
     rssFeed: 'https://loki.network/category/messenger-updates/feed/',
     closable: false,
-    name: 'Messenger updates',
-    profileAvatar: 'images/loki/loki_icon.png',
+    name: 'Session Updates',
+    profileAvatar: 'images/session/session_chat_icon.png',
   };
 
-  await initConversation(publicChatData);
+  const autoJoinLokiChats = false;
+
+  if (autoJoinLokiChats) {
+    await initConversation(publicChatData);
+  }
+
   await initConversation(newsRssFeedData);
   await initConversation(updatesRssFeedData);
 
@@ -2339,6 +2344,7 @@ async function getUnreadByConversation(conversationId) {
   return map(rows, row => jsonToObject(row.json));
 }
 
+// Note: Sorting here is necessary for getting the last message (with limit 1)
 async function getMessagesByConversation(
   conversationId,
   { limit = 100, receivedAt = Number.MAX_VALUE, type = '%' } = {}
@@ -2349,7 +2355,7 @@ async function getMessagesByConversation(
       conversationId = $conversationId AND
       received_at < $received_at AND
       type LIKE $type
-    ORDER BY received_at DESC
+    ORDER BY sent_at DESC
     LIMIT $limit;
     `,
     {
